@@ -1,4 +1,4 @@
--- /api/magnent/:id - magnet link aggregation from three independent sources:
+-- /api/magnet/:id - magnet link aggregation from three independent sources:
 --   * sukebei.nyaa.si  (RSS feed, magnet rebuilt from <nyaa:infoHash>)
 --   * javdb.com        (search -> video detail page magnet table)
 --   * javbus.com       (search -> detail gid/uc -> ajax magnet table)
@@ -8,13 +8,19 @@
 -- is grouped by source so clients can tell where each magnet came from.
 --
 -- Usage:
---   GET /api/magnent/:id                -> all three sources
---   GET /api/magnent/:id?s=sukebei     -> only sukebei
---   GET /api/magnent/:id?s=javdb       -> only javdb
---   GET /api/magnent/:id?s=javbus      -> only javbus
---   GET /api/magnent/:id?s=javdb,javbus-> multiple (comma separated)
+--   GET /api/magnet/:id                -> all three sources
+--   GET /api/magnet/:id?s=sukebei     -> only sukebei
+--   GET /api/magnet/:id?s=javdb       -> only javdb
+--   GET /api/magnet/:id?s=javbus      -> only javbus
+--   GET /api/magnet/:id?s=javdb,javbus-> multiple (comma separated)
 
 local cjson = require "cjson"
+-- Encode empty Lua tables as [] (not {}). Every empty-shaped field in the
+-- API response (magnets / tags) is a list; emitting {} makes frontends
+-- treat it as an object and break (e.g. .slice / for..of on it).
+if cjson.encode_empty_table_as_object then
+    cjson.encode_empty_table_as_object(false)
+end
 local http = require "resty.http"
 
 local _M = {}
@@ -157,6 +163,7 @@ function _M.parse_sukebei(xml)
         if info_hash then
             local view = item:match("<guid[^>]*>(.-)</guid>") or item:match("<link>(.-)</link>")
             local name = item:match("<title>(.-)</title>") or ""
+            local epoch = rss_date_to_epoch(item:match("<pubDate>(.-)</pubDate>"))
             magnets[#magnets + 1] = {
                 name = name,
                 magnet = build_magnet(info_hash, name),
@@ -166,7 +173,8 @@ function _M.parse_sukebei(xml)
                 leechers = tonumber(item:match("leechers[^>]*>([^<]+)<") or "0") or 0,
                 downloads = tonumber(item:match("downloads[^>]*>([^<]+)<") or "0") or 0,
                 category = item:match("category[^>]*>([^<]+)<") or "",
-                date = rss_date_to_epoch(item:match("<pubDate>(.-)</pubDate>")),
+                date = epoch,
+                date_str = epoch and os.date("%Y-%m-%d", epoch) or "",
                 url = view,
                 torrent_url = item:match("<link>(.-)</link>"),
             }
@@ -260,6 +268,23 @@ function _M.parse_javdb_detail(html, detail_url)
                 info_hash = normalize_hash(decoded:match("urn:btih:([%w]+)")),
                 size = strip_html(html:match('<span class="meta">(.-)</span>', s) or ""),
                 date = strip_html(html:match('<span class="time">(.-)</span>', s) or ""),
+                date_str = (function()
+                    local d = strip_html(html:match('<span class="time">(.-)</span>', s) or "")
+                    if d ~= "" and d ~= "0000-00-00" then
+                        return d
+                    end
+                    local head = html:sub(math.max(1, s - 500), s - 1)
+                    local dd = head:match('data%-date="([^"]+)"') or head:match("data%-date='([^']+)'")
+                    if dd then
+                        local y, m, day = dd:match("(%d%d%d%d)(%d%d)(%d%d)")
+                        if y then return y .. "-" .. m .. "-" .. day end
+                    end
+                    return d
+                end)(),
+                files = (function()
+                    local head = html:sub(math.max(1, s - 500), s - 1)
+                    return tonumber(head:match('data%-files="(%d+)"') or head:match("data%-files='(%d+)'"))
+                end)(),
                 tags = tags,
                 url = detail_url,
             }
@@ -348,6 +373,7 @@ function _M.parse_javbus_magnets(html, movie_url)
                 info_hash = normalize_hash(decoded:match("urn:btih:([%w]+)")),
                 size = strip_html(tds[2] or ""),
                 date = strip_html(tds[3] or ""),
+                date_str = strip_html(tds[3] or ""),
                 url = movie_url,
             }
         end
@@ -484,7 +510,7 @@ function _M.handle(raw_id)
         ngx.header["Content-Type"] = "application/json; charset=utf-8"
         ngx.say(cjson.encode({
             error = "bad_request",
-            message = "Missing id parameter. Usage: /api/magnent/:id",
+            message = "Missing id parameter. Usage: /api/magnet/:id",
         }))
         return
     end

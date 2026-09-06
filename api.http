@@ -52,19 +52,19 @@ Authorization: Bearer {{token}}
 
 ### 3.3 磁力链接聚合（始终需 token；id 不区分大小写）
 # 不带 s= 参数 -> 返回 sukebei / javdb / javbus 三家数据，按 source 区分
-GET {{host}}/api/magnent/ssni-730
+GET {{host}}/api/magnet/REBD-1060
 Authorization: Bearer {{token}}
 
 ### 3.3.1 磁力链接聚合 - 只查 javdb
-GET {{host}}/api/magnent/SSNI-730?s=javdb
+GET {{host}}/api/magnet/SSNI-730?s=javdb
 Authorization: Bearer {{token}}
 
 ### 3.3.2 磁力链接聚合 - 只查 javbus
-GET {{host}}/api/magnent/SSNI-730?s=javbus
+GET {{host}}/api/magnet/SSNI-730?s=javbus
 Authorization: Bearer {{token}}
 
 ### 3.3.3 磁力链接聚合 - 多来源（逗号分隔）
-GET {{host}}/api/magnent/SSNI-730?s=javdb,javbus
+GET {{host}}/api/magnet/SSNI-730?s=javdb,javbus
 Authorization: Bearer {{token}}
 
 ### 3.4 播放平台探测（始终需 token；并发探测 missav/supjav/jable/123av 谁可播放，id 不区分大小写）

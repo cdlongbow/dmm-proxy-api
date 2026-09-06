@@ -543,12 +543,11 @@ Authorization: Bearer <token>
 ## 4.4 磁力链接聚合
 
 ```
-GET /api/magnent/:id
+GET /api/magnet/:id
 ```
 
 按番号从三个独立站点聚合磁力链接：**sukebei**（sukebei.nyaa.si）、**javdb**（javdb.com）、**javbus**（javbus.com）。结果按来源分组，客户端可据此区分收藏/排序。
 
-> 路径拼写注意：接口名是 **`magnent`**（不是 `magnet`），与 `/api/trailer_direct` 同源的直链风格。
 
 **鉴权**：请求**始终需要** `Authorization: Bearer <token>`（与其它 `/api/*` 一致）。
 
@@ -575,19 +574,19 @@ GET /api/magnent/:id
 
 ```http
 # 全部三个来源
-GET http://localhost:8080/api/magnent/ssni-730
+GET http://localhost:8080/api/magnet/ssni-730
 Authorization: Bearer <token>
 
 # 只查 javdb
-GET http://localhost:8080/api/magnent/SSNI-730?s=javdb
+GET http://localhost:8080/api/magnet/SSNI-730?s=javdb
 Authorization: Bearer <token>
 
 # 只查 javbus
-GET http://localhost:8080/api/magnent/SSNI-730?s=javbus
+GET http://localhost:8080/api/magnet/SSNI-730?s=javbus
 Authorization: Bearer <token>
 
 # 多来源（逗号分隔）
-GET http://localhost:8080/api/magnent/SSNI-730?s=javdb,javbus
+GET http://localhost:8080/api/magnet/SSNI-730?s=javdb,javbus
 Authorization: Bearer <token>
 ```
 
@@ -680,7 +679,7 @@ Authorization: Bearer <token>
 `400` 示例（未带番号）：
 
 ```json
-{ "error": "bad_request", "message": "Missing id parameter. Usage: /api/magnent/:id" }
+{ "error": "bad_request", "message": "Missing id parameter. Usage: /api/magnet/:id" }
 ```
 
 > 注：该接口**不返回 404**——只要请求带上番号即为 `200`，每个来源单独报 `error`。

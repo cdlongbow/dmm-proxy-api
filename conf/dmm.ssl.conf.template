@@ -60,7 +60,7 @@ server {
     }
 
     # --- API: Magnet links ---
-    location ~ ^/api/magnent/(?<api_id>[^/]+)$ {
+    location ~ ^/api/magnet/(?<api_id>[^/]+)$ {
         access_by_lua_block {
             local access = require "access"
             access.gate()

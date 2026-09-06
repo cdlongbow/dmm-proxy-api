@@ -82,7 +82,7 @@ function _M.handle_magnet()
         ngx.header["Content-Type"] = "application/json; charset=utf-8"
         ngx.say(cjson.encode({
             error = "bad_request",
-            message = "Missing id parameter. Usage: /api/magnent/:id",
+            message = "Missing id parameter. Usage: /api/magnet/:id",
         }))
         return
     end

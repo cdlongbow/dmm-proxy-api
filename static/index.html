@@ -701,6 +701,232 @@
     white-space: nowrap;
   }
 
+  /* ---- modal action buttons (magnet / play) ---- */
+  .modal-footer {
+    position: relative;
+  }
+  .action-bar {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 10px;
+    border: 1.5px solid var(--primary-light);
+    background: var(--card-bg);
+    color: var(--primary-dark);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .2s;
+    white-space: nowrap;
+  }
+  .action-btn:hover:not(:disabled) {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+  .action-btn.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+  .action-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+  .action-ico {
+    font-size: 12px;
+    line-height: 1;
+  }
+  .action-ico.spin {
+    display: inline-block;
+    animation: spin .9s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .action-popover {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    width: min(430px, calc(100vw - 40px));
+    max-height: 55vh;
+    overflow-y: auto;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 14px 36px rgba(0,0,0,.18);
+    z-index: 60;
+    padding: 8px;
+    display: none;
+  }
+  .action-popover.open {
+    display: block;
+  }
+  .ap-status {
+    font-size: 13px;
+    color: var(--text-light);
+    text-align: center;
+    padding: 18px 12px;
+  }
+  .ap-group + .ap-group {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+  .ap-head {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--primary-dark);
+    letter-spacing: .3px;
+    margin-bottom: 6px;
+    padding: 0 4px;
+  }
+  .ap-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.45;
+    text-decoration: none;
+    color: var(--text);
+    transition: background .15s;
+  }
+  .ap-row:hover {
+    background: var(--primary-light);
+  }
+  a.ap-row:hover {
+    color: var(--text);
+  }
+  .ap-magnet {
+    cursor: pointer;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ap-name {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-all;
+  }
+  .ap-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--text-light);
+    margin-top: 2px;
+  }
+  .ap-copy {
+    flex-shrink: 0;
+    padding: 2px 10px;
+    border-radius: 8px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 11px;
+    transition: background .2s;
+  }
+  .ap-copy.done {
+    background: var(--primary-dark);
+  }
+  .ap-badge {
+    flex-shrink: 0;
+    font-size: 11px;
+    border-radius: 8px;
+    padding: 2px 8px;
+    white-space: nowrap;
+  }
+  .ap-badge.ok   { background: rgba(124,180,146,.15); color: var(--primary-dark); }
+  .ap-badge.no   { background: rgba(200,120,120,.12); color: var(--accent); }
+  .ap-badge.warn { background: rgba(232,168,124,.15); color: var(--accent); }
+  .ap-sub {
+    font-size: 11px;
+    color: var(--text-light);
+    padding: 2px 4px 0;
+  }
+
+  /* ---- magnet tabs / tags / hint ---- */
+  .ap-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ap-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px 8px;
+    border-radius: 9px;
+    border: 1.5px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text-light);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .ap-tab:hover {
+    border-color: var(--primary-light);
+    color: var(--primary-dark);
+  }
+  .ap-tab.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 600;
+  }
+  .ap-tab-cnt {
+    font-size: 10px;
+    opacity: .8;
+  }
+  .ap-pane { display: none; }
+  .ap-pane.active { display: block; }
+  .ap-tag-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .ap-tag {
+    display: inline-block;
+    font-size: 10px;
+    line-height: 1.6;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: rgba(124,154,146,.1);
+    color: var(--text-light);
+  }
+  .ap-tag.hd { background: rgba(124,180,146,.16); color: var(--primary-dark); }
+  .ap-tag.co { background: rgba(91,152,184,.16); color: #3a7494; }
+  .ap-tag.tx { background: rgba(232,168,124,.16); color: var(--accent); }
+  .ap-hint {
+    margin-top: 10px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    background: rgba(232,168,124,.12);
+    color: var(--accent);
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  .ap-disabled {
+    opacity: .55;
+    cursor: not-allowed;
+  }
+
   /* ---- 18+ / NSFW gate ---- */
   body.gated > *:not(.gate-overlay) {
     display: none !important;
@@ -833,6 +1059,8 @@
     .modal-close { top: 8px; right: 10px; width: 32px; height: 32px; }
     .modal-footer { padding: 10px 14px; flex-wrap: wrap; }
     .modal-badge { display: none; }
+    .action-bar { width: 100%; justify-content: flex-end; margin-left: 0; }
+    .action-btn { padding: 5px 10px; font-size: 11px; }
     .site-footer {
       text-align: right;
       margin: 0 14px calc(12px + env(safe-area-inset-bottom, 0px)) 0;
@@ -943,6 +1171,15 @@
         <span class="modal-sub" id="modal-sub"></span>
       </div>
       <span class="modal-badge" id="modal-badge"></span>
+      <div class="action-bar">
+        <button class="action-btn" id="btn-magnet" onclick="toggleAction('magnet')" disabled>
+          <span class="action-ico">🧲</span><span class="action-lbl" data-i18n="magnet_btn">磁力链接</span>
+        </button>
+        <button class="action-btn" id="btn-play" onclick="toggleAction('play')" disabled>
+          <span class="action-ico">▶</span><span class="action-lbl" data-i18n="play_btn">跳转播放</span>
+        </button>
+      </div>
+      <div class="action-popover" id="action-popover"></div>
     </div>
   </div>
 </div>
@@ -963,6 +1200,19 @@ const I18N = {
     no_data: '暂无数据',
     cover: '封面',
     sample: '样片',
+    magnet_btn: '磁力链接',
+    play_btn: '跳转播放',
+    fetching: '加载中…',
+    magnet_none: '当前番号暂无磁力链接',
+    play_none: '未找到可播放平台',
+    play_ok: '可播放',
+    play_no: '未收录',
+    play_warn: '探测失败',
+    load_failed: '请求失败，请重试',
+    copy: '复制',
+    copied: '已复制',
+    files: '文件',
+    probe_hint: '⚠ 探测失败的平台可能仍有资源，不代表无法播放',
     prev: '← 上一页',
     next: '下一页 →',
     no_img: '暂无图片',
@@ -988,6 +1238,19 @@ const I18N = {
     no_data: 'No data available',
     cover: 'Cover',
     sample: 'Sample',
+    magnet_btn: 'Magnet',
+    play_btn: 'Watch',
+    fetching: 'Loading…',
+    magnet_none: 'No magnet found',
+    play_none: 'No playable source found',
+    play_ok: 'Playable',
+    play_no: 'Not found',
+    play_warn: 'Probe failed',
+    load_failed: 'Request failed, retry',
+    copy: 'Copy',
+    copied: 'Copied',
+    files: 'files',
+    probe_hint: '⚠ Probe-failed platforms may still have the title; "failed" ≠ "not playable"',
     prev: '← Prev',
     next: 'Next →',
     no_img: 'No Image',
@@ -1369,11 +1632,15 @@ function openModal(work) {
   if (work.date) tag.push(work.date);
   document.getElementById('modal-title').textContent = work.title || '';
   document.getElementById('modal-sub').textContent = tag.join(' · ');
+  currentCode = work.code || '';
+  updateActionButtons();
+  closePopover();
   updateModal();
 }
 function closeModal() {
   document.getElementById('modal').classList.remove('open');
   document.body.style.overflow = '';
+  closePopover();
 }
 function modalPrev() {
   if (modalIdx > 0) { modalIdx--; updateModal(); }
@@ -1396,6 +1663,205 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft') modalPrev();
   if (e.key === 'ArrowRight') modalNext();
 });
+
+// ========== Modal Action Buttons (Magnet / Findplay) ==========
+let currentCode = '';
+let fetching = false;
+let magnetData = [];
+
+function updateActionButtons() {
+  const dis = !currentCode;
+  document.getElementById('btn-magnet').disabled = dis;
+  document.getElementById('btn-play').disabled = dis;
+}
+
+function closePopover() {
+  document.getElementById('action-popover').classList.remove('open');
+  document.getElementById('btn-magnet').classList.remove('active');
+  document.getElementById('btn-play').classList.remove('active');
+}
+
+function toggleAction(kind) {
+  const po = document.getElementById('action-popover');
+  const wasOpen = po.classList.contains('open') && po.dataset.kind === kind;
+  closePopover();
+  if (wasOpen || !currentCode) return;
+  po.dataset.kind = kind;
+  document.getElementById(kind === 'magnet' ? 'btn-magnet' : 'btn-play').classList.add('active');
+  po.classList.add('open');
+  po.innerHTML = `<div class="ap-status">⏳ ${t('fetching')}</div>`;
+  if (kind === 'magnet') loadMagnets(); else loadFindplay();
+}
+
+function setBusy(btnId, busy) {
+  const btn = document.getElementById(btnId);
+  const ico = btn.querySelector('.action-ico');
+  if (busy) ico.dataset.prev = ico.textContent;
+  ico.textContent = busy ? '⟳' : (ico.dataset.prev || ico.textContent);
+  ico.classList.toggle('spin', busy);
+  btn.disabled = busy;
+}
+
+function actionFetch(url) {
+  return fetch(url, {
+    headers: { 'Authorization': 'Bearer ' + (window.__API_TOKEN__ || '') },
+  }).then(res => {
+    if (!res.ok) throw new Error('API ' + res.status);
+    return res.json();
+  });
+}
+
+async function loadMagnets() {
+  if (fetching) return;
+  fetching = true;
+  setBusy('btn-magnet', true);
+  const po = document.getElementById('action-popover');
+  try {
+    const data = await actionFetch(`/api/magnet/${encodeURIComponent(currentCode)}`);
+    magnetData = data.sources || [];
+    renderMagnetTabs();
+  } catch (e) {
+    po.innerHTML = `<div class="ap-status">${t('load_failed')}</div>`;
+  } finally {
+    fetching = false;
+    setBusy('btn-magnet', false);
+  }
+}
+
+function renderMagnetTabs() {
+  const po = document.getElementById('action-popover');
+  const anyMagnet = magnetData.some(s => Array.isArray(s.magnets) && s.magnets.length > 0);
+  if (!magnetData.length || !anyMagnet) {
+    po.innerHTML = `<div class="ap-status">${t('magnet_none')}</div>`;
+    return;
+  }
+  const tabs = magnetData.map((s, i) =>
+    `<button class="ap-tab${i === 0 ? ' active' : ''}" onclick="selectMagnetTab(${i})">${escHtml(String(s.source || '').toUpperCase())}<span class="ap-tab-cnt">${s.count != null ? s.count : (s.magnets || []).length}</span></button>`
+  ).join('');
+  po.innerHTML = `<div class="ap-tabs">${tabs}</div>` +
+    magnetData.map((_, i) => `<div class="ap-pane${i === 0 ? ' active' : ''}" id="ap-pane-${i}"></div>`).join('');
+  magnetData.forEach((_, i) => renderMagnetPane(i));
+}
+
+function selectMagnetTab(i) {
+  document.querySelectorAll('#action-popover .ap-tab').forEach((b, k) => b.classList.toggle('active', k === i));
+  document.querySelectorAll('#action-popover .ap-pane').forEach((p, k) => p.classList.toggle('active', k === i));
+}
+
+function renderMagnetPane(i) {
+  const src = magnetData[i];
+  const pane = document.getElementById('ap-pane-' + i);
+  const mags = Array.isArray(src.magnets) ? src.magnets.slice() : [];
+  mags.sort((a, b) => dateVal(b) - dateVal(a));
+  if (!mags.length) {
+    pane.innerHTML = `<div class="ap-status">${escHtml(src.error || t('magnet_none'))}</div>`;
+    return;
+  }
+  pane.innerHTML = mags.map(magnetRow).join('');
+  pane.querySelectorAll('.ap-magnet').forEach(el => {
+    el.addEventListener('click', () => copyMagnet(el.dataset.magnet, el));
+  });
+}
+
+function dateVal(m) {
+  const ts = +m.date;
+  if (m.date === ts) return ts;
+  const n = parseInt(String(m.date_str || m.date || '').replace(/[^\d]/g, ''), 10);
+  return isNaN(n) ? 0 : n;
+}
+
+const HD_PATTERNS = [
+  { re: /\b4K\b|\b2160p\b|\bUHD\b/i, text: '4K', cls: 'hd' },
+  { re: /\b1080p\b|\bFHD\b/i, text: '1080p', cls: 'hd' },
+  { re: /\b720p\b/i, text: '720p', cls: 'tx' },
+  { re: /\bH265\b|\bHEVC\b|\bHVC\b/i, text: 'H265', cls: 'co' },
+  { re: /\bH264\b|\bAVC\b/i, text: 'H264', cls: 'co' },
+  { re: /\bBlu[- ]?ray\b/i, text: 'BD', cls: 'co' },
+];
+
+function hdTags(name, extraTags) {
+  const s = String(name || '');
+  const seen = {};
+  const out = [];
+  for (const p of HD_PATTERNS) {
+    if (p.re.test(s) && !seen[p.text]) { seen[p.text] = 1; out.push({ text: p.text, cls: p.cls }); }
+  }
+  if (Array.isArray(extraTags)) {
+    for (const tg of extraTags) {
+      const tx = String(tg).trim();
+      if (tx && !seen[tx]) { seen[tx] = 1; out.push({ text: tx, cls: 'hd' }); }
+    }
+  }
+  return out.slice(0, 4);
+}
+
+function magnetRow(m) {
+  const tags = hdTags(m.name, m.tags);
+  const tagHtml = tags.map(tg => `<span class="ap-tag ${tg.cls}">${escHtml(tg.text)}</span>`).join('');
+  const files = m.files != null ? `${m.files} ${t('files')}` : '—';
+  return `
+    <div class="ap-row ap-magnet" data-magnet="${escAttr(m.magnet)}">
+      <div class="ap-name">${escHtml(m.name)}</div>
+      ${tagHtml ? `<div class="ap-tag-line">${tagHtml}</div>` : ''}
+      <div class="ap-meta">
+        <span>${escHtml(m.size || '')}</span>
+        <span>${escHtml(files)}</span>
+        <span>${escHtml(m.date_str || '')}</span>
+        <span class="ap-copy">${t('copy')}</span>
+      </div>
+    </div>`;
+}
+
+function copyMagnet(magnet, rowEl) {
+  const badge = rowEl.querySelector('.ap-copy');
+  const done = () => {
+    badge.classList.add('done');
+    badge.textContent = t('copied');
+    setTimeout(() => { badge.classList.remove('done'); badge.textContent = t('copy'); }, 1600);
+  };
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = magnet;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (_) { window.prompt(t('copy'), magnet); }
+    ta.remove();
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(magnet).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+async function loadFindplay() {
+  if (fetching) return;
+  fetching = true;
+  setBusy('btn-play', true);
+  const po = document.getElementById('action-popover');
+  try {
+    const data = await actionFetch(`/api/findplay/${encodeURIComponent(currentCode)}`);
+    const results = data.results || [];
+    const rows = results.map(r => {
+      if (r.playable) {
+        return `<a class="ap-row" href="${escAttr(r.url)}" target="_blank" rel="noopener"><span>${escHtml(r.label)}</span><span class="ap-badge ok">▶ ${t('play_ok')}</span></a>`;
+      }
+      if (r.verified) {
+        return `<div class="ap-row ap-disabled"><span>${escHtml(r.label)}</span><span class="ap-badge no">${t('play_no')}</span></div>`;
+      }
+      return `<a class="ap-row ap-fail" href="${escAttr(r.url)}" target="_blank" rel="noopener"><span>${escHtml(r.label)}</span><span class="ap-badge warn">${t('play_warn')}</span></a>`;
+    }).join('');
+    const hasProbeFail = results.some(r => !r.playable && !r.verified);
+    const hint = hasProbeFail ? `<div class="ap-hint">${t('probe_hint')}</div>` : '';
+    po.innerHTML = (rows || `<div class="ap-status">${t('play_none')}</div>`) + hint;
+  } catch (e) {
+    po.innerHTML = `<div class="ap-status">${t('load_failed')}</div>`;
+  } finally {
+    fetching = false;
+    setBusy('btn-play', false);
+  }
+}
 
 // ========== Cards ==========
 function renderCards(data) {
