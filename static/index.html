@@ -482,7 +482,28 @@
     color: var(--primary-dark);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     letter-spacing: 0.2px;
+    cursor: pointer;
+    transition: color .15s, transform .15s;
   }
+  .card-id:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+  .card-id.copied { color: var(--primary); }
+  .code-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 72px;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,.82);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 18px;
+    border-radius: 20px;
+    pointer-events: none;
+    z-index: 2000;
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .code-toast.show { opacity: 1; }
   .card-date {
     font-size: 11px;
     color: var(--text-light);
@@ -1170,7 +1191,10 @@
       <span class="modal-counter" id="modal-counter">1 / 1</span>
       <div class="modal-text">
         <span class="modal-title" id="modal-title"></span>
-        <span class="modal-sub" id="modal-sub"></span>
+        <div class="modal-sub">
+          <span class="card-id" id="modal-code" data-code="" title=""></span>
+          <span id="modal-date"></span>
+        </div>
       </div>
       <span class="modal-badge" id="modal-badge"></span>
       <div class="action-bar">
@@ -1646,11 +1670,12 @@ function openModal(work) {
   modalIdx = 0;
   document.getElementById('modal').classList.add('open');
   document.body.style.overflow = 'hidden';
-  const tag = [];
-  if (work.code) tag.push(work.code);
-  if (work.date) tag.push(work.date);
   document.getElementById('modal-title').textContent = work.title || '';
-  document.getElementById('modal-sub').textContent = tag.join(' · ');
+  const codeEl = document.getElementById('modal-code');
+  codeEl.textContent = work.code || '';
+  codeEl.dataset.code = work.code || '';
+  codeEl.title = work.code ? t('copy') : '';
+  document.getElementById('modal-date').textContent = work.date ? ' · ' + work.date : '';
   currentCode = work.code || '';
   updateActionButtons();
   closePopover();
@@ -1856,6 +1881,61 @@ function copyMagnet(magnet, rowEl) {
   }
 }
 
+let toastTimer = null;
+function showCopyToast(msg) {
+  let el = document.getElementById('code-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'code-toast';
+    el.className = 'code-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
+}
+
+// Click a 番号 (works list or modal footer) to copy it to the clipboard.
+function copyCode(el) {
+  const code = String(el.dataset.code || el.textContent || '').trim();
+  if (!code) return;
+  const done = () => {
+    el.classList.add('copied');
+    showCopyToast(t('copied'));
+    setTimeout(() => el.classList.remove('copied'), 1200);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(code).then(done).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = code;
+      ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      ta.remove();
+      done();
+    });
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = code;
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (_) {}
+    ta.remove();
+    done();
+  }
+}
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('.card-id');
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  copyCode(el);
+});
+
 async function loadFindplay() {
   if (fetching) return;
   fetching = true;
@@ -1911,7 +1991,7 @@ function renderCards(data) {
     const bookmarkHtml = isRanking && w.bookmarkCount
       ? `<span class="card-tag">♥ ${w.bookmarkCount.toLocaleString()}</span>` : '';
     const code = cidToCode(w.id);
-    const codeHtml = code ? `<span class="card-id">${escHtml(code)}</span>` : '';
+    const codeHtml = code ? `<span class="card-id" data-code="${escAttr(code)}" title="${escAttr(t('copy'))}">${escHtml(code)}</span>` : '';
     const dateHtml = w.deliveryStartAt ? `<span class="card-date">${escHtml(fmtRelease(w.deliveryStartAt))}</span>` : '';
     return `
       <div class="card fade-in" style="animation-delay:${i*30}ms"
