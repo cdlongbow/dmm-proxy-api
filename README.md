@@ -12,6 +12,7 @@
 - **预告片**：`/api/trailer/:id` 返回多个码率预告片的直链及代理路径；探测从最高档（`hhb`/1080p）开始，只返回最高三档
 - **预告片直链**：`/api/trailer_direct/:id` 并发请求 AVWikiDB / DMM / JAVDatabase，谁先成功用谁，并带 `source`；命中结果缓存 7 天（`lua_shared_dict`）
 - **磁力链接聚合**：`/api/magnent/:id`（注意拼写是 `magnent`）并发聚合 sukebei / javdb / javbus 三家磁力链接，结果按来源分组，可选 `?s=` 指定来源；结果按 `(来源, 番号)` 缓存 6 小时
+- **播放平台探测**：`/api/findplay/:id` 并发探测 missav / supjav / jable / 123av 四个在线播放平台哪个能播放该番号，返回可跳转搜索链接与 `playable` 标识；命中缓存，未命中 1 小时（`lua_shared_dict findplay_cache 20m`）
 - **每日更新列表**：`/api/todayupdate` 通过 DMM FANZA GraphQL API 获取每日更新的作品列表，支持按日期查询、分页
 - **热门排行榜**：`/api/ranking` 按销售排名分数返回热门作品，支持分页
 - **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览，卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航
@@ -22,7 +23,7 @@
 - **流式视频代理**：`/proxy/video/*` 支持 HTTP Range，可在播放器内拖动进度条；自动带浏览器 UA 与 DMM 的 `Referer` 避免 CDN 403
 - **可选 HTTPS (SSL)**：证书目录存在即自动启用 443；无证书则纯 HTTP，开箱即用
 - **防滥用**：
-  - **`/api/*`**（cover/trailer/trailer_direct/film_sample/magnent/todayupdate/ranking）**始终**需要 `Authorization: Bearer <token>`
+  - **`/api/*`**（cover/trailer/trailer_direct/film_sample/magnent/findplay/todayupdate/ranking）**始终**需要 `Authorization: Bearer <token>`
   - `DMM_API_PROTECT=on` 时，`/api/*` 返回的 `proxy.*` 附带 `DMM_SIGN_TTL` 秒内有效的 **HMAC-SHA256 签名 URL**；`/proxy/*` 需凭该签名访问，并有单 IP 限流与可选 IP 白名单
   - `DMM_API_PROTECT=off` 时，`/api/*` 返回的 `proxy.*` 为普通路径（无签名），`/proxy/*` 完全开放
 
@@ -55,6 +56,7 @@ dmm-proxy-api/
 │   ├── api_trailer.lua     # /api/trailer 实现
 │   ├── api_trailer_direct.lua # /api/trailer_direct 实现（多源并发 + 7 天缓存）
 │   ├── api_magnet.lua       # /api/magnent 实现（磁力链接聚合，多源并发 + 6 小时缓存）
+│   ├── api_findplay.lua     # /api/findplay 实现（播放平台探测，多平台并发 + 缓存）
 │   ├── api_todayupdate.lua # /api/todayupdate 实现（每日更新列表）
 │   └── api_ranking.lua     # /api/ranking 实现（热门排行榜）
 ├── static/                 # 前端静态文件（docker volume 挂载，改后刷新即可）
@@ -172,6 +174,9 @@ curl -s -H "$HEADER" http://localhost:8080/api/magnent/SSNI-730
 
 # 磁力链接聚合（只查 javdb）
 curl -s -H "$HEADER" "http://localhost:8080/api/magnent/SSNI-730?s=javdb"
+
+# 播放平台探测（哪些在线播放站能播放该番号）
+curl -s -H "$HEADER" http://localhost:8080/api/findplay/WAAA-321
 
 # 每日更新列表
 curl -s -H "$HEADER" http://localhost:8080/api/todayupdate
@@ -454,6 +459,35 @@ Authorization: Bearer <token>
 各来源磁力字段差异：`sukebei` 额外带 `seeders/leechers/downloads/category/torrent_url`；`javdb` 额外带 `tags`（如 `["高清","字幕"]）；`date` 在 sukebei 为 epoch 秒，javdb/javbus 为日期字符串。完整字段说明见 [api.md](./api.md#44-磁力链接聚合)。
 
 参数：`s`(可选，`sukebei`/`javdb`/`javbus`，可逗号分隔，默认全部)。
+
+### 播放平台探测
+
+```
+GET /api/findplay/:id
+Authorization: Bearer <token>
+```
+
+并发探测 **missav** / **supjav** / **jable** / **123av** 四个在线播放平台哪个能播放该番号。每项返回 `url`（可跳转的搜索链接）、`playable`（可跳转标识）与 `verified`（判定可信度）。`playable: false` 时附 `error` 说明：`HTTP 403` 等状态码表示**探测被反爬拦截**（非确认无片源，失败不缓存、可稍后重试），`no result` 表示**确认该平台无片源**。番号大小写不敏感，服务端统一转大写查询。命中结果缓存 `playable: true` 6 小时、`playable: false` 1 小时（`lua_shared_dict findplay_cache 20m`）。完整字段说明见 [api.md](./api.md#45-播放平台探测)。
+
+```http
+GET http://localhost:8080/api/findplay/waaa-321
+Authorization: Bearer <token>
+```
+
+**示例响应 `200`**
+
+```json
+{
+  "code": "WAAA-321",
+  "count": 4,
+  "results": [
+    { "platform": "missav", "label": "MissAV", "url": "https://missav.ai/en/search/WAAA-321", "playable": true, "verified": true },
+    { "platform": "supjav", "label": "SupJAV", "url": "https://supjav.com/?s=WAAA-321", "playable": true, "verified": true },
+    { "platform": "jable",  "label": "JableTV", "url": "https://jable.tv/search/WAAA-321/", "playable": true, "verified": true },
+    { "platform": "123av",  "label": "123AV", "url": "https://123av.com/en/search?keyword=WAAA-321", "playable": true, "verified": true }
+  ]
+}
+```
 
 ### 资源代理（`/proxy/*`）
 

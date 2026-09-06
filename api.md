@@ -687,6 +687,93 @@ Authorization: Bearer <token>
 
 ---
 
+## 4.5 播放平台探测
+
+```
+GET /api/findplay/:id
+```
+
+按番号**并发探测** missav / supjav / jable / 123av 四个在线播放平台中哪些可以播放该番号，返回每个平台的可跳转搜索链接与「可跳转标识」（`playable`），客户端可就地展示「去这个平台看」按钮。
+
+**鉴权**：请求**始终需要** `Authorization: Bearer <token>`（与其它 `/api/*` 一致）。
+
+**输入**：`:id` 为番号（如 `ssni-730`）。服务端会**规范化**为全大写、去空白后作为查询关键词与缓存键，大小写不敏感。
+
+**平台与搜索 URL**
+
+| `platform` | `label` | 跳转/搜索 URL 模板 | 判定依据 |
+|------|------|------|------|
+| `missav` | MissAV | `https://missav.ai/en/search/{CODE}` | 页面 `class="thumbnail"` 结果卡片 + 番号出现（空结果页只回显查询词，不算命中） |
+| `supjav` | SupJAV | `https://supjav.com/?s={CODE}` | WordPress `class="post"` 结果卡片 + 番号出现 |
+| `jable` | JableTV | `https://jable.tv/search/{CODE}/` | `class="detail"` 结果卡片 + 番号出现 |
+| `123av` | 123AV | `https://123av.com/en/search?keyword={CODE}` | 结果链接命中 `v/{code}`（无番号结果时 123av 会回滚展示无关影片，因此只看番号文本会误判，必须以链接为准） |
+
+URL 一律使用**大写**番号；各站点搜索本身对大小写不敏感。
+
+**流程**
+
+1. 先查内存缓存（`findplay_cache`，`lua_shared_dict 20m`，键为 `fp:<platform>:<code>`），命中直接返回。
+2. 未命中则**并发**请求四个平台（`ngx.thread`，单路超时 8 秒）的搜索页。
+3. 平台页面 `HTTP 200` 且检测到「结果卡片 + 番号」才算 `playable: true`；页面 `200` 但无结果 → `playable: false`。请求被拦截（403/超时）→ `verified: false`（既非"可播放"也非"确认无片源"，而是**探测失败**）。
+4. 镜像域故障自动轮换：missav 依次 `missav.ai → missav.ws → missav123.com → missav.live`；jable 依次 `jable.tv → fs1.app`。全部未拿到 `200` 时自动**整轮重试一次**（间隔 0.5s）再判失败。
+
+**缓存**：
+- 只有**真正拿到页面判定**（`verified: true`）的结果才会被缓存：`playable: true` 缓存 **6 小时**，`playable: false` 缓存 **1 小时**（让新上架更快出现）。
+- **探测失败（403/超时等）不缓存**——避免把一次临时反爬封锁误当成"该平台确认无片源"定格 1 小时；客户端可稍后重试。
+- 容器重启后内存缓存清空。
+
+**示例请求**
+
+```http
+GET http://localhost:8080/api/findplay/waaa-321
+Authorization: Bearer <token>
+```
+
+**示例响应 `200`**
+
+```json
+{
+  "code": "WAAA-321",
+  "count": 4,
+  "results": [
+    { "platform": "missav", "label": "MissAV", "url": "https://missav.ai/en/search/WAAA-321", "playable": true, "verified": true },
+    { "platform": "supjav", "label": "SupJAV", "url": "https://supjav.com/?s=WAAA-321", "playable": true, "verified": true },
+    { "platform": "jable",  "label": "JableTV", "url": "https://jable.tv/search/WAAA-321/", "playable": true, "verified": true },
+    { "platform": "123av",  "label": "123AV", "url": "https://123av.com/en/search?keyword=WAAA-321", "playable": true, "verified": true }
+  ]
+}
+```
+
+**响应字段**
+
+| 字段 | 说明 |
+|------|------|
+| `code` | 规范化的番号（大写、去空格） |
+| `count` | `playable: true` 的平台数 |
+| `results[].platform` | 平台标识：`missav` / `supjav` / `jable` / `123av` |
+| `results[].label` | 平台显示名 |
+| `results[].url` | 可跳转的搜索链接（直接打开即该番号的搜索结果） |
+| `results[].playable` | **可跳转标识**：`true` = 该平台有该番号的片源，可跳转播放；`false` = 无结果或探测失败 |
+| `results[].verified` | 判定可信度：`true` = 页面真实加载并给出判定（无结果/有结果均可信）；`false` = 探测被拦截/失败（403、超时等），`playable: false` 仅表示"本次未能验证"，不代表该平台无片源 |
+| `results[].error` | 仅 `playable: false` 时存在，失败原因（如 `jable: HTTP 403` = 探测失败、`missav: no result` = 确认无片源） |
+
+> 全部平台都被反爬拦截（`verified: false`）时，返回 `200` 且 `count: 0`——此时各平台的 `error` 均含 `HTTP 403` 等状态码，**应视作"探测失败，可稍后重试"，而非"确认无片源"**；失败结果不会写入缓存。
+
+**错误码**
+
+| 状态 | 场景 |
+|------|------|
+| `400` | 缺少番号 |
+| `200` | 正常返回；各平台单独报 `playable` 与 `error`，不返回 404 |
+
+`400` 示例（未带番号）：
+
+```json
+{ "error": "bad_request", "message": "Missing id parameter. Usage: /api/findplay/:id" }
+```
+
+---
+
 ## 5. 封面图片代理
 
 ```

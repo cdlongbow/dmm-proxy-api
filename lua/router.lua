@@ -91,6 +91,22 @@ function _M.handle_magnet()
     magnet.handle(id)
 end
 
+function _M.handle_findplay()
+    local id = ngx.var.api_id
+    if not id or id == "" then
+        ngx.status = 400
+        ngx.header["Content-Type"] = "application/json; charset=utf-8"
+        ngx.say(cjson.encode({
+            error = "bad_request",
+            message = "Missing id parameter. Usage: /api/findplay/:id",
+        }))
+        return
+    end
+
+    local findplay = require "api_findplay"
+    findplay.handle(id)
+end
+
 function _M.handle_film_sample()
     local id = ngx.var.api_id
     if not id or id == "" then
