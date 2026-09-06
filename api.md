@@ -3,7 +3,7 @@
 基于 OpenResty (nginx + lua) 实现的 DMM 资源代理，通过日本节点（TUN）绕过 DMM 的地区封锁 / 403，为客户端提供封面、剧照和预告片的直链访问与视频流式转发。
 
 - Base URL: `http://{host}:{DMM_PROXY_PORT}`（默认 `8080`）
-- 鉴权方式: `Authorization: Bearer <token>`（token 由环境变量 `DMM_AUTH_TOKEN` 指定）
+- 鉴权方式: `Authorization: Bearer <token>`。token 可为 **主 token**（`DMM_AUTH_TOKEN`）或 **session token**（`/api/session` 签发，短时效、绑定客户端 IP）。浏览器前端**只用 session token**，主 token 永不下发前端；但所有 `/api/*` 接口两者都接受。
 - 默认 `DMM_PROXY_PORT=80`、`DMM_PROXY_SSL_PORT=443`，详见 `.env`
 
 ---
@@ -23,10 +23,12 @@
 
 | 环境变量 | 说明 | 默认 |
 |----------|------|------|
-| `DMM_AUTH_TOKEN` | API token，同时作为签名 HMAC 密钥 | - |
+| `DMM_AUTH_TOKEN` | API 主 token，同时作为签名 HMAC 密钥 | - |
 | `DMM_SIGN_TTL` | 签名 URL 有效秒数 | `220` |
 | `DMM_RATE_PER_MIN` | 单 IP 每分钟请求上限（on 时生效） | `240` |
 | `DMM_ALLOW_IPS` | 可选 IP 白名单，逗号分隔 IP/CIDR，空=放行全部 | 空 |
+| `DMM_FRONTEND_TTL` | session token 有效秒数（`/api/session` 签发，绑定客户端 IP） | `900` |
+| `DMM_CACHE_TOTAL` | 全部查询结果缓存的共享内存总预算（MB），启动时按固定比例分配：findplay 2%、ranking 5%、trailer 5%、todayupdate 5%、film_sample 20%、magnet 取剩余（63%）。非法值或 <30 回退 `250` | `250` |
 
 ### 签名 URL 说明（on 时）
 
@@ -43,14 +45,18 @@
 所有 `/api/*` 接口**始终**需要携带请求头（无论 `DMM_API_PROTECT` 是 on 还是 off）：
 
 ```
-Authorization: Bearer <DMM_AUTH_TOKEN>
+Authorization: Bearer <主 token 或 session token>
 ```
+
+- **主 token** = `DMM_AUTH_TOKEN`（身份/脚本/服务端调用）。
+- **session token** = `GET /api/session` 签发（见第 1.1 节），**绑定客户端 IP + `DMM_FRONTEND_TTL` 内有效**，供浏览器前端使用；即使从 DevTools 抄走也无法长期复用。
+- 校验顺序：token 等于主 token 直接放行；否则按 session token 验签（`HMAC(secret, "frontend:"..ip..":"..exp)`，须未过期且 IP 一致）。
 
 | 状态码 | 含义 |
 |--------|------|
 | `200` | 成功 |
 | `401` | 缺少 Authorization 头（始终生效，`/api/*`） |
-| `403` | token 无效；或 on 时签名无效/过期/IP 不在白名单 |
+| `403` | token 无效 / 已过期 / IP 不匹配；或 on 时签名无效/过期/IP 不在白名单 |
 | `429` | 超出单 IP 限流（on 时） |
 | `404` | 对应 DMM 资源未找到 |
 | `400` | 参数缺失 |
@@ -69,26 +75,42 @@ GET /health
 
 ---
 
-## 1.1 前端配置（config.js）
+## 1.1 前端会话令牌（Session Token）
 
 ```
-GET /config.js
+GET /api/session
 ```
 
-无需鉴权。由 nginx Lua handler 动态生成，将 `DMM_AUTH_TOKEN` 环境变量注入为前端可用的 JavaScript 变量。
+无需鉴权。签发一个**短时效、绑定客户端 IP** 的会话 token，供浏览器前端调用 `/api/*` 使用。前端**永远不会拿到 `DMM_AUTH_TOKEN`**（`/config.js` 注入主 token 的方案已移除，防止密钥泄露）。
 
 **响应 `200`**
 
-```javascript
-window.__API_TOKEN__ = 'your-dmm-auth-token-here';
+```json
+{
+  "token": "<64位hex-hmac>.<exp>",
+  "exp": 1788691100,
+  "ttl": 900
+}
 ```
+
+| 响应字段 | 说明 |
+|----------|------|
+| `token` | 会话 token，形如 `<hex-hmac>.<exp>`，`HMAC-SHA256(secret, "frontend:" .. ip .. ":" .. exp)` |
+| `exp` | 过期 Unix 时间戳（签发时刻 + `DMM_FRONTEND_TTL`） |
+| `ttl` | 有效秒数（默认 `900` = 15 分钟） |
 
 | 响应头 | 值 |
 |--------|-----|
-| `Content-Type` | `application/javascript; charset=utf-8` |
+| `Content-Type` | `application/json; charset=utf-8` |
 | `Cache-Control` | `no-store` |
 
-> 前端 `<script src="/config.js">` 加载后，通过 `window.__API_TOKEN__` 获取 token，调用 `/api/*` 时自动携带 `Authorization: Bearer <token>`。token 不会暴露在前端源码中。
+**要点**
+
+- **IP 绑定**：token 绑定"客户端 IP"。后端按 `CF-Connecting-IP` → `X-Real-IP` → `remote_addr` 的优先级取 IP（CDN/反向代理后仍取到稳定的真实客户端 IP），签发与校验用同一套逻辑，IP 不一致或已过期即判无效（`403`）。
+- **主 token 不受影响**：`/api/*` 仍同时接受 `Authorization: Bearer <DMM_AUTH_TOKEN>` 主 token 或 session token，两者混用均可。
+- **过期自动刷新**：前端在 token 将过期（剩余 <30s）或收到 `401/403` 时自动调用 `/api/session` 重新签发并重试一次。
+
+> 浏览器前端加载逻辑：`refreshSession()` 懒签发作一次，之后调用 `/api/*` 统一携带 `Authorization: Bearer <session token>`。
 
 ---
 
@@ -156,6 +178,8 @@ GET /api/film_sample/:id
 根据番号返回全部剧照（标准图 + 高清图）的直链与本机代理路径。
 
 > 通过 DMM 官方公开的 **FANZA TV GraphQL API**（`https://api.tv.dmm.co.jp/graphql`）一次性获取全部剧照，无需逐个探测，响应快且可拿到 `2K` 高清大图（`awsimgsrc.dmm.co.jp/dig_white`）。
+
+> **缓存**：**成功结果**按 CID 缓存 **8 小时**（`lua_shared_dict film_sample_cache`，容量由 `DMM_CACHE_TOTAL` 分配，占 20%）；404（确认无剧照）**不缓存**，避免把一时的上游抖动固化。容器重启后清空。
 
 **示例请求**
 
@@ -332,6 +356,8 @@ GET /api/todayupdate
 
 通过 DMM FANZA GraphQL API（`https://api.video.dmm.co.jp/graphql`）查询按 `deliveryStartDate` 排序的最新作品。
 
+> **缓存**：结果按 `(date, limit, offset)` 缓存 **8 小时**（`lua_shared_dict todayupdate_cache`，容量由 `DMM_CACHE_TOTAL` 分配，占 5%）。容器重启后清空。
+
 **请求参数**
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -425,7 +451,8 @@ Authorization: Bearer <token>
 | 状态码 | 场景 |
 |--------|------|
 | `502` | 上游 DMM GraphQL API 请求失败 |
-| `400` | 缺少 Authorization 头 / token 无效 |
+| `401` | 缺少 Authorization 头 |
+| `403` | token 无效 / 已过期 / IP 不匹配 |
 
 ---
 
@@ -438,6 +465,8 @@ GET /api/ranking
 获取 DMM 热门作品排行榜，按销售排名分数（`SALES_RANK_SCORE`）排序。默认返回 30 条。
 
 通过 DMM FANZA GraphQL API 查询，与每日更新使用相同的上游接口但排序方式不同。
+
+> **缓存**：结果按 `(limit, offset)` 缓存 **8 小时**（`lua_shared_dict ranking_cache`，容量由 `DMM_CACHE_TOTAL` 分配，占 5%）。`offset >= 100` 取的是上游快路径且仍会缓存。容器重启后清空。
 
 **请求参数**
 
@@ -536,7 +565,8 @@ Authorization: Bearer <token>
 | 状态码 | 场景 |
 |--------|------|
 | `502` | 上游 DMM GraphQL API 请求失败 |
-| `400` | 缺少 Authorization 头 / token 无效 |
+| `401` | 缺少 Authorization 头 |
+| `403` | token 无效 / 已过期 / IP 不匹配 |
 
 ---
 
@@ -711,7 +741,7 @@ URL 一律使用**大写**番号；各站点搜索本身对大小写不敏感。
 
 **流程**
 
-1. 先查内存缓存（`findplay_cache`，`lua_shared_dict 20m`，键为 `fp:<platform>:<code>`），命中直接返回。
+1. 先查内存缓存（`findplay_cache`，`lua_shared_dict`，容量由 `DMM_CACHE_TOTAL` 分配、占 2%，键为 `fp:<platform>:<code>`），命中直接返回。
 2. 未命中则**并发**请求四个平台（`ngx.thread`，单路超时 8 秒）的搜索页。
 3. 平台页面 `HTTP 200` 且检测到「结果卡片 + 番号」才算 `playable: true`；页面 `200` 但无结果 → `playable: false`。请求被拦截（403/超时）→ `verified: false`（既非"可播放"也非"确认无片源"，而是**探测失败**）。
 4. 镜像域故障自动轮换：missav 依次 `missav.ai → missav.ws → missav123.com → missav.live`；jable 依次 `jable.tv → fs1.app`。全部未拿到 `200` 时自动**整轮重试一次**（间隔 0.5s）再判失败。
@@ -840,13 +870,15 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 
 ## 前端界面
 
-访问 `http://localhost:80` 打开内置 SPA 浏览界面。前端通过 `/config.js` 获取 token 后自动调用 `/api/todayupdate` 和 `/api/ranking` 接口获取数据。
+访问 `http://localhost:80` 打开内置 SPA 浏览界面。前端通过 `GET /api/session` 获取**短时效 session token**，再携带 `Authorization: Bearer <session token>` 调用数据接口；主 token 永不进入浏览器。
 
 ### 功能
 
 - **今日更新**：7 天时间线选择器 + 卡片网格浏览
 - **热门排行**：销量排名展示，含排名序号与收藏数
-- **图片预览**：点击卡片弹出大图弹窗，封面 + 剧照轮播，键盘 `←` `→` / `Esc` 导航
+- **图片预览**：点击卡片封面弹出大图弹窗，封面 + 剧照轮播，键盘 `←` `→` / `Esc` 导航；点击**番号**自动复制到剪贴板（含弹窗内番号，带"已复制"提示）
+- **磁力面板**：三个来源（SUKEBEI / JAVDB / JAVBUS）Tab 展示磁力列表，磁力点击复制；**某个来源失败时该 Tab 内显示「重新获取」按钮**（`?s=<来源>` 定向重拉）；三个来源全为空的番号显示"当前番号暂无磁力链接"+「重新获取」按钮（全量重拉）
+- **播放平台**：点「跳转播放」并发探测 missav / supjav / jable / 123av 是否可播，可跳转的显示按钮、探测失败的标注"探测失败"
 - **配色主题**：6 套小清新风格一键切换（薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑）
 - **中英双语**：界面语言一键切换
 - **Mock 降级**：API 不可用时自动使用内置 mock 数据
@@ -855,9 +887,11 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 
 | 接口 | 用途 | 鉴权 |
 |------|------|------|
-| `GET /config.js` | 获取 API token | 无需 |
+| `GET /api/session` | 签发前端用 session token | 无需 |
 | `GET /api/todayupdate?date=YYYY-MM-DD&offset=0&limit=30` | 今日更新列表 | `Bearer <token>` |
 | `GET /api/ranking?offset=0&limit=30` | 热门排行榜 | `Bearer <token>` |
+| `GET /api/magnet/:id` | 磁力链接聚合（可选 `?s=<来源>` 定向） | `Bearer <token>` |
+| `GET /api/findplay/:id` | 播放平台探测 | `Bearer <token>` |
 
 ### 字段映射（API → 前端）
 

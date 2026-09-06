@@ -12,10 +12,12 @@
 - **预告片**：`/api/trailer/:id` 返回多个码率预告片的直链及代理路径；探测从最高档（`hhb`/1080p）开始，只返回最高三档
 - **预告片直链**：`/api/trailer_direct/:id` 并发请求 AVWikiDB / DMM / JAVDatabase，谁先成功用谁，并带 `source`；命中结果缓存 7 天（`lua_shared_dict`）
 - **磁力链接聚合**：`/api/magnet/:id` 并发聚合 sukebei / javdb / javbus 三家磁力链接，结果按来源分组，可选 `?s=` 指定来源；结果按 `(来源, 番号)` 缓存 6 小时
-- **播放平台探测**：`/api/findplay/:id` 并发探测 missav / supjav / jable / 123av 四个在线播放平台哪个能播放该番号，返回可跳转搜索链接与 `playable` 标识；命中缓存，未命中 1 小时（`lua_shared_dict findplay_cache 20m`）
+- **播放平台探测**：`/api/findplay/:id` 并发探测 missav / supjav / jable / 123av 四个在线播放平台哪个能播放该番号，返回可跳转搜索链接与 `playable` 标识；命中缓存，未命中 1 小时（`lua_shared_dict findplay_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 2%）
 - **每日更新列表**：`/api/todayupdate` 通过 DMM FANZA GraphQL API 获取每日更新的作品列表，支持按日期查询、分页
 - **热门排行榜**：`/api/ranking` 按销售排名分数返回热门作品，支持分页
-- **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览，卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航
+- **会话令牌（Session Token）**：`/api/session` 签发**短时效、绑定客户端 IP** 的 token 给前端使用，主 token（`DMM_AUTH_TOKEN`）永不下发浏览器；`/api/*` 同时接受主 token 或 session token（`Authorization: Bearer`）
+- **结果缓存**：todayupdate / ranking / film_sample 缓存 8 小时、magnet 6 小时、findplay（命中 6h / 未命中 1h）、trailer_direct 7 天；缓存内存总预算由 `DMM_CACHE_TOTAL` 按固定比例自动分配（findplay 2% / ranking 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 其余 63%）
+- **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览，卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航；点击番号一键复制；磁力面板三源 Tab + 失败来源「重新获取」、全部无数据「重新获取」；播放平台一键跳转
 - **多配色主题**：6 套小清新配色方案（薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑），一键切换，自动保存
 - **中英双语**：界面支持中文 / English 切换，自动保存偏好
 - **智能 CID 探测**：番号（如 `ABP-477`）自动转成 DMM 内部多个候选 CID（如 `abp00477`、`abp0477`、`1abp477`）逐一探测，命中第一个可用项
@@ -23,9 +25,35 @@
 - **流式视频代理**：`/proxy/video/*` 支持 HTTP Range，可在播放器内拖动进度条；自动带浏览器 UA 与 DMM 的 `Referer` 避免 CDN 403
 - **可选 HTTPS (SSL)**：证书目录存在即自动启用 443；无证书则纯 HTTP，开箱即用
 - **防滥用**：
-  - **`/api/*`**（cover/trailer/trailer_direct/film_sample/magnet/findplay/todayupdate/ranking）**始终**需要 `Authorization: Bearer <token>`
+  - **`/api/*`**（cover/trailer/trailer_direct/film_sample/magnet/findplay/todayupdate/ranking）**始终**需要 `Authorization: Bearer <token>`，token 可为主 token（`DMM_AUTH_TOKEN`）或 `/api/session` 签发的 session token
   - `DMM_API_PROTECT=on` 时，`/api/*` 返回的 `proxy.*` 附带 `DMM_SIGN_TTL` 秒内有效的 **HMAC-SHA256 签名 URL**；`/proxy/*` 需凭该签名访问，并有单 IP 限流与可选 IP 白名单
   - `DMM_API_PROTECT=off` 时，`/api/*` 返回的 `proxy.*` 为普通路径（无签名），`/proxy/*` 完全开放
+
+---
+
+## 界面截图
+
+> 示例图取自本地开发环境，点击图片可查看原图。
+
+<p align="center">
+  <img src="resource/Xnip2026-09-06_19-11-24.jpg" width="720" alt="界面截图 1" />
+</p>
+
+<p align="center">
+  <img src="resource/Xnip2026-09-06_19-11-42.jpg" width="720" alt="界面截图 2" />
+</p>
+
+<p align="center">
+  <img src="resource/Xnip2026-09-06_19-11-57.jpg" width="720" alt="界面截图 3" />
+</p>
+
+<p align="center">
+  <img src="resource/Xnip2026-09-06_19-12-21.jpg" width="720" alt="界面截图 4" />
+</p>
+
+<p align="center">
+  <img src="resource/Xnip2026-09-06_19-12-45.jpg" width="720" alt="界面截图 5" />
+</p>
 
 ---
 
@@ -47,9 +75,10 @@ dmm-proxy-api/
 ├── certs/                  # 存放 SSL 证书（fullchain.pem + private.key），不入库
 ├── lua/                    # 业务逻辑（docker volume 挂载，改后可 reload）
 │   ├── config.lua          # 配置读取、CID 转换、代理路径与签名、IP 白名单工具
-│   ├── router.lua          # 鉴权 + 路由分发（check_auth）
+│   ├── router.lua          # 鉴权 + 路由分发（check_auth，接受主 token 或 session token）
 │   ├── access.lua          # gate（IP 白名单 + 限流）与 require_sig（签名校验）
-│   ├── sign.lua            # HMAC-SHA256 签名 / 验签
+│   ├── sign.lua            # HMAC-SHA256 签名 / 验签 / session token 签发校验（CDN 安全 IP 绑定）
+│   ├── api_session.lua     # /api/session 实现（短时效、客户端 IP 绑定的前端 token）
 │   ├── web.lua             # 基于 vendored lua-resty-http 的探测与抓取
 │   ├── api_cover.lua       # /api/cover 实现
 │   ├── api_film_sample.lua # /api/film_sample 实现（FANZA TV GraphQL）
@@ -86,11 +115,13 @@ cp .env.example .env
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `DMM_AUTH_TOKEN` | `change-me-in-production` | `/api/*` 的 Bearer token，同时作为签名 URL 的 HMAC 密钥，也是 `/config.js` 注入前端的 token 值。**生产必改**：`openssl rand -hex 32` |
+| `DMM_AUTH_TOKEN` | `change-me-in-production` | `/api/*` 的主 Bearer token，同时作为签名 URL 与 session token 的 HMAC 密钥。**只存在于服务端**，不再经 `/config.js` 注入前端。**生产必改**：`openssl rand -hex 32` |
 | `DMM_API_PROTECT` | `on` | 代理侧防滥用总开关，`on/true/1/yes` 开启，`off/空` 关闭。`on` 时 `/api/*` 返回的 proxy 附带签名+时效，`/proxy/*` 需凭签名访问且有限流/IP 白名单；`off` 时 proxy 无签名、`/proxy/*` 完全开放 |
 | `DMM_SIGN_TTL` | `220` | on 时签名 URL 的有效秒数 |
 | `DMM_RATE_PER_MIN` | `240` | on 时单 IP 每分钟请求上限 |
 | `DMM_ALLOW_IPS` | 空 | on 时可选的 IP 白名单，逗号分隔 IP 与 CIDR（如 `1.2.3.4,203.0.113.0/24`），空=放行全部 |
+| `DMM_FRONTEND_TTL` | `900` | `/api/session` 签发的 session token 有效秒数（默认 15 分钟；绑定客户端 IP，过期或换 IP 即 403） |
+| `DMM_CACHE_TOTAL` | `250` | 全部查询结果缓存的共享内存总预算（MB），启动时按固定比例分配（findplay 2% / ranking 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 63%）；非法值或 <30 回退 250 |
 | `DMM_PROXY_PORT` | `80` | 宿主机对外 HTTP 端口 |
 | `DMM_PROXY_SSL_PORT` | `443` | 宿主机对外 HTTPS 端口 |
 | `DMM_CERT_DIR` | `/etc/ssl/dmm` | 容器内证书目录 |
@@ -157,8 +188,8 @@ HEADER="Authorization: Bearer <你的DMM_AUTH_TOKEN>"
 # 前端界面
 curl -s http://localhost:8080/           # -> index.html
 
-# 前端配置（token 注入）
-curl -s http://localhost:8080/config.js  # -> window.__API_TOKEN__ = '...';
+# 前端会话令牌（无需鉴权；浏览器前端用它调用 /api/*，主 token 不下发）
+curl -s http://localhost:8080/api/session # -> {"token":"<hex>.<exp>","exp":...,"ttl":900}
 
 # 封面
 curl -s -H "$HEADER" http://localhost:8080/api/cover/SONE-128
@@ -217,12 +248,12 @@ GET /health
 ```
 无需鉴权，返回 `ok`。
 
-### 前端配置
+### 前端会话令牌
 
 ```
-GET /config.js
+GET /api/session
 ```
-无需鉴权。Lua handler 将 `DMM_AUTH_TOKEN` 环境变量注入为 `window.__API_TOKEN__`，前端据此调用 `/api/*`。`Cache-Control: no-store`。
+无需鉴权。签发**短时效、绑定客户端 IP** 的 session token（形如 `<64位hex-hmac>.<exp>`，`HMAC-SHA256(secret, "frontend:"..ip..":"..exp)`，有效 `DMM_FRONTEND_TTL` 秒）。浏览器前端只用它，主 token 永不下发；`/api/*` 同时接受主 token 或 session token。IP 按 `CF-Connecting-IP` → `X-Real-IP` → `remote_addr` 取值，CDN 后依然稳定。`Cache-Control: no-store`。
 
 ### 封面 / 剧照
 
@@ -412,7 +443,7 @@ Authorization: Bearer <token>
 
 > 番号不区分大小写；响应 `200` 状态下各来源单独报错。
 
-按番号并发聚合三个独立站点的磁力链接，结果按 `sources[]` 分组：**sukebei**（RSS，磁力由 infoHash + 官方 tracker 重建）、**javdb**（搜索页 → 详情页磁力表格）、**javbus**（搜索页 → `gid/uc` → ajax 磁力表格）。单个来源失败不影响其它来源（该来源 `count: 0` 并附 `error`）。结果按 `(来源, 番号)` 缓存 **6 小时**（`lua_shared_dict magnet_cache 20m`）。
+按番号并发聚合三个独立站点的磁力链接，结果按 `sources[]` 分组：**sukebei**（RSS，磁力由 infoHash + 官方 tracker 重建）、**javdb**（搜索页 → 详情页磁力表格）、**javbus**（搜索页 → `gid/uc` → ajax 磁力表格）。单个来源失败不影响其它来源（该来源 `count: 0` 并附 `error`）。结果按 `(来源, 番号)` 缓存 **6 小时**（`lua_shared_dict magnet_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 63%）。
 
 ```http
 # 全部三个来源
@@ -467,7 +498,7 @@ GET /api/findplay/:id
 Authorization: Bearer <token>
 ```
 
-并发探测 **missav** / **supjav** / **jable** / **123av** 四个在线播放平台哪个能播放该番号。每项返回 `url`（可跳转的搜索链接）、`playable`（可跳转标识）与 `verified`（判定可信度）。`playable: false` 时附 `error` 说明：`HTTP 403` 等状态码表示**探测被反爬拦截**（非确认无片源，失败不缓存、可稍后重试），`no result` 表示**确认该平台无片源**。番号大小写不敏感，服务端统一转大写查询。命中结果缓存 `playable: true` 6 小时、`playable: false` 1 小时（`lua_shared_dict findplay_cache 20m`）。完整字段说明见 [api.md](./api.md#45-播放平台探测)。
+并发探测 **missav** / **supjav** / **jable** / **123av** 四个在线播放平台哪个能播放该番号。每项返回 `url`（可跳转的搜索链接）、`playable`（可跳转标识）与 `verified`（判定可信度）。`playable: false` 时附 `error` 说明：`HTTP 403` 等状态码表示**探测被反爬拦截**（非确认无片源，失败不缓存、可稍后重试），`no result` 表示**确认该平台无片源**。番号大小写不敏感，服务端统一转大写查询。命中结果缓存 `playable: true` 6 小时、`playable: false` 1 小时（`lua_shared_dict findplay_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 2%）。完整字段说明见 [api.md](./api.md#45-播放平台探测)。
 
 ```http
 GET http://localhost:8080/api/findplay/waaa-321
@@ -519,7 +550,7 @@ Authorization: Bearer <token>
 ## 工作原理
 
 1. 客户端访问 `http://localhost:80`，nginx 返回 `static/index.html`（SPA 前端）。
-2. 前端加载 `/config.js` 获取 API token，据此调用 `/api/todayupdate`、`/api/ranking` 等接口。
+2. 前端调用 `/api/session` 获取短时效 session token（主 token 全程不进入浏览器），据此调用 `/api/todayupdate`、`/api/ranking`、`/api/magnet`、`/api/findplay` 等接口。
 3. 客户端请求 `/api/cover/:id`、`/api/film_sample/:id` 或 `/api/trailer/:id`，携带 Bearer token；`router.check_auth()` 校验（无论 protect 开关均强制）。
 4. `config.to_cids()` 将番号转为多个候选 CID。
 5. 构建响应：直接 CDN 直链 + 本机代理路径。数据来源两种：
@@ -574,16 +605,18 @@ Authorization: Bearer <token>
 | **分页** | 每页 30 条，支持翻页浏览 |
 | **Mock 降级** | API 不可用时自动使用内置 mock 数据，界面仍可正常浏览 |
 
-### Token 注入
+### Token 机制
 
-前端通过 `/config.js` 获取 API token（由 nginx Lua handler 从 `DMM_AUTH_TOKEN` 环境变量注入），无需在前端代码中硬编码密钥。前端调用 `/api/*` 时自动携带 `Authorization: Bearer <token>`。
+- **主 token**（`DMM_AUTH_TOKEN`）：服务端专用，供脚本/集成调用，也可用于 `/api/*` 的 `Authorization: Bearer`。
+- **session token**（`/api/session` 签发）：前端唯一持有的 token——短时效（`DMM_FRONTEND_TTL`，默认 15 分钟）、绑定客户端 IP，过期或换 IP 即 `403`；前端在将过期或收到 `401/403` 时自动重新签发。即使从 DevTools 抄走，也无法长期复用，更不会泄露主密钥。
+- `/api/*` 的 `router.check_auth()` 两者都接受。
 
 ### 文件说明
 
 | 文件 | 说明 |
 |------|------|
 | `static/index.html` | 单文件 SPA，包含 HTML / CSS / JS，零依赖 |
-| `/config.js` | 动态生成，返回 `window.__API_TOKEN__`（由 nginx Lua 注入） |
+| `GET /api/session` | 签发前端 session token（无需鉴权，由 nginx Lua 处理） |
 
 > `static/` 通过 volume 挂载，修改后刷新浏览器即可，无需重建容器。
 

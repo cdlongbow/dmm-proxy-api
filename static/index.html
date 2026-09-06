@@ -797,6 +797,22 @@
     text-align: center;
     padding: 18px 12px;
   }
+  .ap-retry {
+    display: block;
+    margin: 0 auto 14px;
+    padding: 6px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary);
+    background: var(--bg);
+    border: 1px solid var(--primary);
+    border-radius: 16px;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .ap-retry:hover { background: var(--primary); color: #fff; }
+  .ap-tab.busy { opacity: .5; pointer-events: none; }
+  .ap-status.ap-state-loading { color: var(--text-light); }
   .ap-group + .ap-group {
     margin-top: 10px;
     padding-top: 10px;
@@ -1249,6 +1265,8 @@ const I18N = {
     play_no: '未收录',
     play_warn: '探测失败',
     load_failed: '请求失败，请重试',
+    retry: '重试',
+    retry_channel: '重新获取',
     copy: '复制',
     copied: '已复制',
     files: '文件',
@@ -1287,6 +1305,8 @@ const I18N = {
     play_no: 'Not found',
     play_warn: 'Probe failed',
     load_failed: 'Request failed, retry',
+    retry: 'Retry',
+    retry_channel: 'Re-fetch',
     copy: 'Copy',
     copied: 'Copied',
     files: 'files',
@@ -1774,15 +1794,36 @@ async function loadMagnets() {
   }
 }
 
-function renderMagnetTabs() {
+async function retryMagnetChannel(i) {
+  const src = magnetData[i];
+  if (!src) return;
+  const pane = document.getElementById('ap-pane-' + i);
+  if (pane) pane.innerHTML = `<div class="ap-state-loading ap-status">${t('loading')}</div>`;
+  const btn = document.querySelector(`#action-popover .ap-tab[data-idx="${i}"]`);
+  if (btn) btn.classList.add('busy');
+  try {
+    const data = await actionFetch(`/api/magnet/${encodeURIComponent(currentCode)}?s=${encodeURIComponent(src.source)}`);
+    const fresh = (data.sources || []).find(x => String(x.source).toLowerCase() === String(src.source).toLowerCase());
+    magnetData[i] = fresh || src;
+    renderMagnetPane(i);
+  } catch (e) {
+    if (pane) pane.innerHTML = `<div class="ap-status">${t('load_failed')}</div>` +
+      `<button class="ap-retry" onclick="retryMagnetChannel(${i})">${t('retry_channel')}</button>`;
+  } finally {
+    if (btn) btn.classList.remove('busy');
+  }
+}
+
+async function renderMagnetTabs() {
   const po = document.getElementById('action-popover');
   const anyMagnet = magnetData.some(s => Array.isArray(s.magnets) && s.magnets.length > 0);
   if (!magnetData.length || !anyMagnet) {
-    po.innerHTML = `<div class="ap-status">${t('magnet_none')}</div>`;
+    po.innerHTML = `<div class="ap-status">${t('magnet_none')}</div>` +
+      `<button class="ap-retry" onclick="loadMagnets()">${t('retry_channel')}</button>`;
     return;
   }
   const tabs = magnetData.map((s, i) =>
-    `<button class="ap-tab${i === 0 ? ' active' : ''}" onclick="selectMagnetTab(${i})">${escHtml(String(s.source || '').toUpperCase())}<span class="ap-tab-cnt">${s.count != null ? s.count : (s.magnets || []).length}</span></button>`
+    `<button class="ap-tab${i === 0 ? ' active' : ''}" data-idx="${i}" onclick="selectMagnetTab(${i})">${escHtml(String(s.source || '').toUpperCase())}<span class="ap-tab-cnt">${s.count != null ? s.count : (s.magnets || []).length}</span></button>`
   ).join('');
   po.innerHTML = `<div class="ap-tabs">${tabs}</div>` +
     magnetData.map((_, i) => `<div class="ap-pane${i === 0 ? ' active' : ''}" id="ap-pane-${i}"></div>`).join('');
@@ -1800,7 +1841,8 @@ function renderMagnetPane(i) {
   const mags = Array.isArray(src.magnets) ? src.magnets.slice() : [];
   mags.sort((a, b) => dateVal(b) - dateVal(a));
   if (!mags.length) {
-    pane.innerHTML = `<div class="ap-status">${escHtml(src.error || t('magnet_none'))}</div>`;
+    pane.innerHTML = `<div class="ap-status">${escHtml(src.error || t('magnet_none'))}</div>` +
+      `<button class="ap-retry" onclick="retryMagnetChannel(${i})">${t('retry_channel')}</button>`;
     return;
   }
   pane.innerHTML = mags.map(magnetRow).join('');

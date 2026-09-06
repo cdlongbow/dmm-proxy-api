@@ -3,13 +3,19 @@
 # 使用前：
 #   1. 确保服务已启动：docker compose up -d --build
 #   2. 如需更换 host/token，修改下面的变量
-#   3. /api/* 始终需要 token（无论 DMM_API_PROTECT on/off）
+#   3. /api/* 始终需要 token（无论 DMM_API_PROTECT on/off），token 可为主 token（@token）或
+#      /api/session 签发的 session token（见"0. 前端会话令牌"，浏览器前端只用它）
 #   4. /proxy/* 不需要 token；DMM_API_PROTECT 只影响访问 /proxy/* 是否需要签名：
 #        on  -> 必须使用 /api 返回的签名 URL（带 sig/exp），且限流、可选 IP 白名单
 #        off -> 用下面的原始路径即可，不签名
 
 @host = http://localhost:8080
 @token = 7966ddc9e82048fc7e03e5d8365954e8
+
+### 0. 前端会话令牌（无需鉴权）
+# 返回 { token, exp, ttl }；token 短时效（默认 900s）、绑定客户端 IP。
+# 把返回值中的 token 作为 <token> 调用 /api/* 与主 token 等效（Authorization: Bearer session-token）。
+GET {{host}}/api/session
 
 ### 1. 健康检查（无需鉴权）
 GET {{host}}/health
