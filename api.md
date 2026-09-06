@@ -540,6 +540,153 @@ Authorization: Bearer <token>
 
 ---
 
+## 4.4 磁力链接聚合
+
+```
+GET /api/magnent/:id
+```
+
+按番号从三个独立站点聚合磁力链接：**sukebei**（sukebei.nyaa.si）、**javdb**（javdb.com）、**javbus**（javbus.com）。结果按来源分组，客户端可据此区分收藏/排序。
+
+> 路径拼写注意：接口名是 **`magnent`**（不是 `magnet`），与 `/api/trailer_direct` 同源的直链风格。
+
+**鉴权**：请求**始终需要** `Authorization: Bearer <token>`（与其它 `/api/*` 一致）。
+
+**输入**：`:id` 为番号（如 `ssni-730`）。服务端会**规范化**为全大写、去空白后作为查询关键词与缓存键，大小写不敏感。
+
+**请求参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `s` | string | 否 | 指定来源，取值 `sukebei` / `javdb` / `javbus`，可逗号分隔多个（如 `s=javdb,javbus`）。`s` 为空、缺失或未知时默认返回全部三个来源 |
+
+**流程**
+
+1. 先查内存缓存（`magnet_cache`，`lua_shared_dict`，键为 `mg:<source>:<code>`），命中直接返回。
+2. 未命中则**并发请求**三个来源（`ngx.thread`，单路超时 8 秒）。
+   - **sukebei**：RSS 搜索页，RSS 只带 infoHash，磁力链接由 infoHash + nyaa 官方 tracker 列表重建。
+   - **javdb**：搜索页定位精确匹配番号的视频 → 详情页解析磁力表格（无需登录即可拿到全部磁力）。
+   - **javbus**：搜索页（自带 `existmag=mag` Cookie 开启磁力 → 详情页取 `gid/uc` → ajax 磁力表格）。遇到间歇性年龄验证页会自动重试一次。
+3. 任一来源查询失败不影响其它来源：该来源返回 `count: 0` 并附 `error` 说明。
+
+**缓存**：结果按 `(source, code)` 缓存 **6 小时**（`CACHE_TTL=21600`）；容器重启后内存缓存清空，重新查询即回落。命中缓存的来源不再访问上游站点。
+
+**示例请求**
+
+```http
+# 全部三个来源
+GET http://localhost:8080/api/magnent/ssni-730
+Authorization: Bearer <token>
+
+# 只查 javdb
+GET http://localhost:8080/api/magnent/SSNI-730?s=javdb
+Authorization: Bearer <token>
+
+# 只查 javbus
+GET http://localhost:8080/api/magnent/SSNI-730?s=javbus
+Authorization: Bearer <token>
+
+# 多来源（逗号分隔）
+GET http://localhost:8080/api/magnent/SSNI-730?s=javdb,javbus
+Authorization: Bearer <token>
+```
+
+**示例响应 `200`**（节选）
+
+```json
+{
+  "code": "SSNI-730",
+  "count": 25,
+  "sources": [
+    {
+      "source": "sukebei",
+      "count": 6,
+      "magnets": [
+        {
+          "name": "SSNI-730 ...",
+          "magnet": "magnet:?xt=urn:btih:1a2b...&dn=...&tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce",
+          "info_hash": "1a2b...",
+          "size": "1.9 GiB",
+          "seeders": 12,
+          "leechers": 3,
+          "downloads": 108,
+          "category": "English Translated",
+          "date": 1762843191,
+          "url": "https://sukebei.nyaa.si/view/123456",
+          "torrent_url": "https://sukebei.nyaa.si/download/123456.torrent"
+        }
+      ]
+    },
+    {
+      "source": "javdb",
+      "count": 14,
+      "magnets": [
+        {
+          "name": "SSNI-730 無修正...",
+          "magnet": "magnet:?xt=urn:btih:...",
+          "info_hash": "5c6d...",
+          "size": "3.5 GB",
+          "date": "2025-11-11",
+          "tags": ["高清", "字幕"],
+          "url": "https://javdb.com/v/WrBQ7"
+        }
+      ]
+    },
+    {
+      "source": "javbus",
+      "count": 5,
+      "magnets": [
+        {
+          "name": "SSNI-730...",
+          "magnet": "magnet:?xt=urn:btih:...",
+          "info_hash": "9e8f...",
+          "size": "2.4 GB",
+          "date": "2025-11-15",
+          "url": "https://www.javbus.com/SSNI-730"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**响应字段**
+
+| 字段 | 说明 |
+|------|------|
+| `code` | 规范化的番号（大写、去空格） |
+| `count` | 全部来源磁力总数 |
+| `sources[].source` | 来源标识：`sukebei` / `javdb` / `javbus` |
+| `sources[].count` | 该来源磁力数 |
+| `sources[].error` | 该来源失败原因（如 `javdb: no exact match`）；成功时不存在 |
+| `sources[].magnets[].magnet` | 完整 magnet URI |
+| `sources[].magnets[].info_hash` | 40 位小写 info hash |
+| `sources[].magnets[].name` | 种子标题 |
+| `sources[].magnets[].size` | 文件大小（字符串，原始文本，如 `1.9 GiB`） |
+| `sources[].magnets[].date` | sukebei 为 pubDate 的 epoch 秒；javdb/javbus 为上传日期字符串 |
+| `sources[].magnets[].url` | 来源详情页 URL |
+| `sources[].magnets[].seeders/leechers/downloads` | 仅 sukebei：做种/下载/完成数 |
+| `sources[].magnets[].category` | 仅 sukebei：分类 |
+| `sources[].magnets[].torrent_url` | 仅 sukebei：`.torrent` 文件直链 |
+| `sources[].magnets[].tags` | 仅 javdb：如 `["高清","字幕"]` |
+
+**错误码**
+
+| 状态 | 场景 |
+|------|------|
+| `400` | 缺少番号 |
+| `200` | 正常返回；各来源可能 `count: 0` 并带 `error`（单个来源失败不影响整体） |
+
+`400` 示例（未带番号）：
+
+```json
+{ "error": "bad_request", "message": "Missing id parameter. Usage: /api/magnent/:id" }
+```
+
+> 注：该接口**不返回 404**——只要请求带上番号即为 `200`，每个来源单独报 `error`。
+
+---
+
 ## 5. 封面图片代理
 
 ```

@@ -59,6 +59,20 @@ server {
         }
     }
 
+    # --- API: Magnet links ---
+    location ~ ^/api/magnent/(?<api_id>[^/]+)$ {
+        access_by_lua_block {
+            local access = require "access"
+            access.gate()
+            local router = require "router"
+            router.check_auth()
+        }
+        content_by_lua_block {
+            local router = require "router"
+            router.handle_magnet()
+        }
+    }
+
     # --- API: Film Sample ---
     location ~ ^/api/film_sample/(?<api_id>[^/]+)$ {
         access_by_lua_block {
