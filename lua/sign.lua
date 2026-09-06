@@ -69,10 +69,25 @@ end
 -- shortly afterwards.
 -- ---------------------------------------------------------------------------
 
+-- Client IP to bind the session token to. When the site sits behind a
+-- reverse proxy / CDN (e.g. Cloudflare) the direct socket peer (remote_addr)
+-- is a *changing* anycast edge IP, which would make an IP-bound token fail
+-- intermittently (403). Prefer the real client IP forwarded by the proxy so
+-- the binding is stable; fall back to the socket peer.
+local function binding_ip()
+    return ngx.var.http_cf_connecting_ip
+        or ngx.var.http_x_real_ip
+        or ngx.var.remote_addr
+        or ""
+end
+
+local function session_msg(ip, exp)
+    return "frontend:" .. ip .. ":" .. exp
+end
+
 function _M.mint_frontend()
     local exp = ngx.time() + config.FRONTEND_TTL
-    local msg = "frontend:" .. (ngx.var.remote_addr or "") .. ":" .. exp
-    return sign_bytes(msg) .. "." .. tostring(exp)
+    return sign_bytes(session_msg(binding_ip(), exp)) .. "." .. tostring(exp)
 end
 
 -- Verify a frontend session token for the current request. Returns true on
@@ -88,8 +103,7 @@ function _M.verify_frontend(token)
     if tonumber(exp) <= ngx.time() then
         return false
     end
-    local msg = "frontend:" .. (ngx.var.remote_addr or "") .. ":" .. exp
-    local expected = sign_bytes(msg)
+    local expected = sign_bytes(session_msg(binding_ip(), exp))
     if #sig ~= #expected then
         return false
     end
