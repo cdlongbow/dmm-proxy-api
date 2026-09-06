@@ -458,17 +458,17 @@
   }
   /* ---- search results (detail layout, spans two grid cells) ---- */
   .search-result {
-    grid-column: span 2;
+    grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: 220px minmax(0, 1fr);
-    gap: 20px;
+    grid-template-columns: minmax(190px, 250px) minmax(0, 1fr);
+    gap: 24px;
     background:
       linear-gradient(180deg, rgba(127,127,127,0.035), transparent 150px),
       var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 18px;
     box-shadow: var(--shadow);
-    padding: 16px;
+    padding: 18px;
     overflow: hidden;
     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   }
@@ -567,15 +567,19 @@
     border-color: rgba(240,180,90,0.42);
   }
   .sr-table {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    column-gap: 26px;
+    row-gap: 6px;
+    align-items: start;
+    margin-top: 2px;
   }
   .sr-row {
     display: flex;
     font-size: 12.5px;
     line-height: 1.55;
     gap: 10px;
+    min-width: 0;
   }
   .sr-label {
     flex: 0 0 88px;
@@ -1956,9 +1960,6 @@ function renderSearchItem(w, i) {
   const rating = w.review && w.review.count
     ? `★ ${w.review.average} ・ ${w.review.count}${t('sr_reviews')}` : '';
   const meta =
-    mchip(delivery, 'date', t('sr_delivery')) +
-    mchip(released, 'date', t('sr_released')) +
-    mchip(dur, 'dur', t('sr_duration')) +
     mchip(rating, 'rate', t('sr_review'));
   const desc = w.description
     ? `<div class="sr-desc" title="${escAttr(t('sr_expand'))}" onclick="this.classList.toggle('expanded')">${escHtml(w.description)}</div>`
@@ -1988,6 +1989,9 @@ function renderSearchItem(w, i) {
       </div>
       ${meta ? `<div class="sr-meta">${meta}</div>` : ''}
       <div class="sr-table">
+        ${row('sr_delivery', delivery)}
+        ${row('sr_released', released)}
+        ${row('sr_duration', dur)}
         ${row('sr_actresses', actors)}
         ${row('sr_directors', directors)}
         ${row('sr_series', series)}
