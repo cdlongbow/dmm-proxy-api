@@ -26,6 +26,8 @@ services:
       - DMM_RATE_PER_MIN=${DMM_RATE_PER_MIN:-240}
       - DMM_CACHE_TOTAL=${DMM_CACHE_TOTAL:-250}
       - DMM_ALLOW_IPS=${DMM_ALLOW_IPS:-}
+      - DMM_API_ID=${DMM_API_ID:-}
+      - DMM_AFFILIATE_ID=${DMM_AFFILIATE_ID:-}
       - DMM_CERT_DIR=${DMM_CERT_DIR:-/etc/ssl/dmm}
       - DMM_CERT_FILE=${DMM_CERT_FILE:-fullchain.pem}
       - DMM_CERT_KEY=${DMM_CERT_KEY:-private.key}

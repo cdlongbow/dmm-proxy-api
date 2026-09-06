@@ -137,6 +137,20 @@ server {
         }
     }
 
+    # --- API: FANZA 番号 search ---
+    location ~ ^/api/search/(?<api_id>[^/]+)$ {
+        access_by_lua_block {
+            local access = require "access"
+            access.gate()
+            local router = require "router"
+            router.check_auth()
+        }
+        content_by_lua_block {
+            local router = require "router"
+            router.handle_search()
+        }
+    }
+
     # --- Frontend: serve index.html at root ---
     location = / {
         root /etc/openresty/static;

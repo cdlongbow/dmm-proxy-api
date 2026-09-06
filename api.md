@@ -28,7 +28,7 @@
 | `DMM_RATE_PER_MIN` | 单 IP 每分钟请求上限（on 时生效） | `240` |
 | `DMM_ALLOW_IPS` | 可选 IP 白名单，逗号分隔 IP/CIDR，空=放行全部 | 空 |
 | `DMM_FRONTEND_TTL` | session token 有效秒数（`/api/session` 签发，绑定客户端 IP） | `900` |
-| `DMM_CACHE_TOTAL` | 全部查询结果缓存的共享内存总预算（MB），启动时按固定比例分配：findplay 2%、ranking 5%、trailer 5%、todayupdate 5%、film_sample 20%、magnet 取剩余（63%）。非法值或 <30 回退 `250` | `250` |
+| `DMM_CACHE_TOTAL` | 全部查询结果缓存的共享内存总预算（MB），启动时按固定比例分配：findplay 2%、ranking 5%、search 5%、trailer 5%、todayupdate 5%、film_sample 20%、magnet 取剩余（58%）。非法值或 <30 回退 `250` | `250` |
 
 ### 签名 URL 说明（on 时）
 
@@ -803,6 +803,80 @@ Authorization: Bearer <token>
 
 ---
 
+## 4.6 FANZA 番号搜索
+
+```
+GET /api/search/:id
+```
+
+按番号搜索 DMM **官方 affiliate ItemList API**（`site=FANZA`、`sort=match`、`keyword` 查询），返回作品列表，供前端「番号搜索」按钮使用。
+
+**鉴权**：请求**始终需要** `Authorization: Bearer <token>`（与其它 `/api/*` 一致）。
+
+**输入**：`:id` 为番号（如 `abp-477`、`IPX-685`）。**大小写不敏感**——服务端统一转成**大写**后作为 `keyword` 发给 DMM（`/api/search/abp-477` 等价于 `/api/search/ABP-477`）。
+
+**参数**
+
+| 参数 | 说明 |
+|------|------|
+| `hits` | 每页条数，默认 30，最大 100 |
+| `offset` | 0 基分页偏移（对外 0 基；上游 DMM 为 1 基，服务端自动 +1） |
+
+**上游配置**：affiliate 凭据来自 `DMM_API_ID` / `DMM_AFFILIATE_ID`（未设置时回退到内置默认值），见 `lua/config.lua`。
+
+**流程**
+
+1. 先查内存缓存（`search_cache`，`lua_shared_dict`，容量由 `DMM_CACHE_TOTAL` 分配、占 5%，键为 `sr:<CODE>:<offset>`），命中直接返回（TTL 6 小时）。
+2. 未命中则请求 ItemList API，`result.status` 为 `200` 且携带 `items` 即成功。
+3. 归一化每个 item：`content_id` → `id`（前端用 `cidToCode` 还原番号）、`imageURL.large` → `cover.large`、`date` → `deliveryStartAt`、`iteminfo.actress/maker` → `actresses/maker`、`review` → `review`；`sampleImageURL` 尽力抽取大图。
+
+**示例请求**
+
+```http
+GET http://localhost:8080/api/search/abp-477
+Authorization: Bearer <token>
+```
+
+**示例响应 `200`**
+
+```json
+{
+  "keyword": "ABP-477",
+  "total": 2,
+  "hits": 30,
+  "limit": 30,
+  "offset": 0,
+  "hasNext": false,
+  "count": 2,
+  "works": [
+    {
+      "id": "118abp477",
+      "title": "エンドレスセックス AIKA",
+      "cover": { "medium": "https://pics.dmm.co.jp/mono/movie/adult/118abp477/118abp477ps.jpg", "large": "..." },
+      "deliveryStartAt": "2016-05-10 10:00:00",
+      "actresses": [ { "id": 1008887, "name": "AIKA" } ],
+      "maker": { "id": 40136, "name": "プレステージ" },
+      "review": { "average": 4.41, "count": 32 },
+      "url": "https://www.dmm.co.jp/...",
+      "floor": "dvd",
+      "price": { "price": 4180 }
+    }
+  ]
+}
+```
+
+> `sort=match` 为模糊匹配：`ZZZ-000` 这类无精确条目的关键词，DMM 会返回部分匹配作品（`total` 为命中总数）。需要精确映射时前端可结合 `match` 排序与 `cidToCode(w.id)` 精确比对。
+
+**错误码**
+
+| 状态 | 场景 |
+|------|------|
+| `400` | 缺少番号 |
+| `502` | DMM 上游失败（HTTP 非 200 或 `result.status` 非成功），返回 `upstream_error` |
+| `401`/`403` | 未带 / 无效 token |
+
+---
+
 ## 5. 封面图片代理
 
 ```
@@ -876,6 +950,7 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 
 - **今日更新**：7 天时间线选择器 + 卡片网格浏览
 - **热门排行**：销量排名展示，含排名序号与收藏数
+- **番号搜索**：输入番号（如 `ABP-477`）一键搜索，走 DMM 官方 FANZA affiliate API，支持分页
 - **图片预览**：点击卡片封面弹出大图弹窗，封面 + 剧照轮播，键盘 `←` `→` / `Esc` 导航；点击**番号**自动复制到剪贴板（含弹窗内番号，带"已复制"提示）
 - **磁力面板**：三个来源（SUKEBEI / JAVDB / JAVBUS）Tab 展示磁力列表，磁力点击复制；**某个来源失败时该 Tab 内显示「重新获取」按钮**（`?s=<来源>` 定向重拉）；三个来源全为空的番号显示"当前番号暂无磁力链接"+「重新获取」按钮（全量重拉）
 - **播放平台**：点「跳转播放」并发探测 missav / supjav / jable / 123av 是否可播，可跳转的显示按钮、探测失败的标注"探测失败"
@@ -890,6 +965,7 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 | `GET /api/session` | 签发前端用 session token | 无需 |
 | `GET /api/todayupdate?date=YYYY-MM-DD&offset=0&limit=30` | 今日更新列表 | `Bearer <token>` |
 | `GET /api/ranking?offset=0&limit=30` | 热门排行榜 | `Bearer <token>` |
+| `GET /api/search/:id?offset=0&hits=30` | FANZA 番号搜索（上游大写） | `Bearer <token>` |
 | `GET /api/magnet/:id` | 磁力链接聚合（可选 `?s=<来源>` 定向） | `Bearer <token>` |
 | `GET /api/findplay/:id` | 播放平台探测 | `Bearer <token>` |
 

@@ -369,6 +369,65 @@
     pointer-events: none;
   }
 
+  /* ---- expanding search pill (mode-bar) ---- */
+  .search-pill {
+    display: flex;
+    align-items: center;
+    position: relative;
+  }
+  .search-fields {
+    display: flex;
+    align-items: center;
+    height: 34px;
+    margin-left: 0;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-width .3s ease, opacity .25s ease, margin-left .3s ease, padding .3s ease;
+    border-radius: 20px;
+    border: 1.5px solid var(--primary-light);
+    background: var(--card-bg);
+  }
+  .search-pill.open .search-fields {
+    max-width: 280px;
+    opacity: 1;
+    margin-left: 6px;
+    padding: 0 6px 0 14px;
+  }
+  .search-input {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+  .search-input::placeholder {
+    color: var(--text-light);
+  }
+  .search-submit {
+    width: 28px;
+    height: 28px;
+    flex: none;
+    border: none;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: filter .2s;
+    padding: 0;
+  }
+  .search-submit:hover {
+    filter: brightness(1.1);
+  }
+
   /* ---- content area ---- */
   .content {
     max-width: 1400px;
@@ -529,6 +588,14 @@
     border-radius: 8px;
     white-space: nowrap;
   }
+  .card-tag.tag-genre {
+    background: rgba(94,129,255,0.10);
+    color: #8f9dff;
+  }
+  .card-tag.tag-label {
+    background: rgba(255,157,94,0.10);
+    color: #ffab80;
+  }
   .card-price {
     font-size: 12px;
     color: var(--accent);
@@ -577,6 +644,7 @@
 
   /* ---- loading / empty ---- */
   .status-msg {
+    grid-column: 1 / -1;
     text-align: center;
     padding: 60px 20px;
     color: var(--text-light);
@@ -1093,6 +1161,7 @@
     .header p { font-size: 12px; }
     .mode-btn { padding: 6px 16px; font-size: 12px; }
     .timeline-wrap { padding: 0 14px; }
+    .search-pill.open .search-fields { max-width: 190px; }
     .timeline-track { padding: 6px 2px 10px; }
     .timeline-day { flex-basis: 46px; }
     .timeline-date { font-size: 12px; }
@@ -1143,6 +1212,13 @@
   <div class="mode-bar">
     <button class="mode-btn active" id="btn-today" onclick="switchMode('today')" data-i18n="btn_today">Today Update</button>
     <button class="mode-btn" id="btn-ranking" onclick="switchMode('ranking')" data-i18n="btn_ranking">Hot Ranking</button>
+    <div class="search-pill" id="search-pill">
+      <button class="mode-btn" id="btn-search" onclick="toggleSearchPill()" data-i18n="btn_search">Search Code</button>
+      <div class="search-fields" id="search-fields">
+        <input type="text" id="search-input" class="search-input" placeholder="" autocomplete="off" spellcheck="false" onkeydown="onSearchKey(event)">
+        <button class="search-submit" id="search-submit" onclick="runSearch()" title="🔍">🔍</button>
+      </div>
+    </div>
   </div>
   <div class="settings-bar">
     <button class="settings-btn" id="btn-browse" onclick="toggleBrowseMode()" title="浏览模式">
@@ -1261,6 +1337,11 @@ const I18N = {
     subtitle_ranking: '按销量排序的热门作品',
     btn_today: '今日上架',
     btn_ranking: '热门排行',
+    btn_search: '番号搜索',
+    subtitle_search: '搜索番号',
+    search_place: '输入番号',
+    search_title: '搜索 %s',
+    search_empty: '请输入番号',
     total: '共 %d 部',
     updates: '更新 — %s',
     ranking: '热门排行',
@@ -1301,6 +1382,11 @@ const I18N = {
     subtitle_ranking: 'Popular items by sales rank',
     btn_today: 'Today Update',
     btn_ranking: 'Hot Ranking',
+    btn_search: 'Search Code',
+    subtitle_search: 'Search by code',
+    search_place: 'Enter a code',
+    search_title: 'Search %s',
+    search_empty: 'Please enter a code',
     total: 'Total %d items',
     updates: 'Updates — %s',
     ranking: 'Hot Ranking',
@@ -1363,8 +1449,8 @@ function applyLang() {
     if (el.id === 'header-sub') return;
     el.textContent = t(key);
   });
-  document.getElementById('header-sub').textContent =
-    currentMode === 'today' ? t('subtitle_today') : t('subtitle_ranking');
+  document.getElementById('search-input').placeholder = t('search_place');
+  updateSubtitle();
   renderThemeDropdown();
   loadCurrentData();
 }
@@ -1584,6 +1670,8 @@ let currentMode = 'today';
 let currentDateIdx = 29;
 let currentPage = 0;
 const PAGE_SIZE = 30;
+let currentSearch = '';
+let lastMode = 'today';
 let modalImages = [];
 let modalIdx = 0;
 
@@ -2032,9 +2120,13 @@ function renderCards(data) {
   }
 
   const isRanking = currentMode === 'ranking';
-  titleEl.textContent = isRanking
-    ? t('ranking')
-    : t('updates', data.date);
+  if (currentMode === 'search' && data.keyword) {
+    titleEl.textContent = t('search_title', data.keyword);
+  } else if (isRanking) {
+    titleEl.textContent = t('ranking');
+  } else {
+    titleEl.textContent = t('updates', data.date);
+  }
   countEl.textContent = t('total', data.total);
 
   container.innerHTML = data.works.map((w, i) => {
@@ -2045,6 +2137,11 @@ function renderCards(data) {
       : '';
     const bookmarkHtml = isRanking && w.bookmarkCount
       ? `<span class="card-tag">♥ ${w.bookmarkCount.toLocaleString()}</span>` : '';
+    const genresHtml = currentMode === 'search' && Array.isArray(w.genres)
+      ? w.genres.slice(0, 3).map(g => `<span class="card-tag tag-genre">${escHtml(g.name || '')}</span>`).join('')
+      : '';
+    const labelHtml = currentMode === 'search' && Array.isArray(w.label) && w.label[0]
+      ? `<span class="card-tag tag-label">${escHtml(w.label[0].name || '')}</span>` : '';
     const code = cidToCode(w.id);
     const codeHtml = code ? `<span class="card-id" data-code="${escAttr(code)}" title="${escAttr(t('copy'))}">${escHtml(code)}</span>` : '';
     const dateHtml = w.deliveryStartAt ? `<span class="card-date">${escHtml(fmtRelease(w.deliveryStartAt))}</span>` : '';
@@ -2065,6 +2162,8 @@ function renderCards(data) {
             ${actresses ? `<span class="card-tag">${escHtml(actresses)}</span>` : ''}
             ${bookmarkHtml}
             ${w.review?.count ? `<span class="card-tag">★ ${w.review.average}</span>` : ''}
+            ${genresHtml}
+            ${labelHtml}
           </div>
           ${priceHtml}
         </div>
@@ -2153,6 +2252,10 @@ async function loadData(url) {
   } catch (e) {
     if (e.name === 'AbortError' || seq !== loadSeq) return;
     console.warn('API unavailable, using mock data:', e.message);
+    if (currentMode === 'search') {
+      container.innerHTML = `<div class="status-msg">${t('load_failed')}</div>`;
+      return;
+    }
     renderCards(currentMode === 'today'
       ? mockTodayData(DATES[currentDateIdx], currentPage * PAGE_SIZE, PAGE_SIZE)
       : mockRankingData(currentPage * PAGE_SIZE, PAGE_SIZE));
@@ -2169,7 +2272,82 @@ async function loadRankingData() {
   const offset = currentPage * PAGE_SIZE;
   loadData(`/api/ranking?offset=${offset}&limit=${PAGE_SIZE}`);
 }
+
+function loadSearchData() {
+  if (!currentSearch) {
+    const container = document.getElementById('cards');
+    document.getElementById('content-title').textContent = '';
+    document.getElementById('content-count').textContent = '';
+    container.innerHTML = `<div class="status-msg">${t('search_empty')}</div>`;
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+  const offset = currentPage * PAGE_SIZE;
+  loadData(`/api/search/${encodeURIComponent(currentSearch)}?offset=${offset}&hits=${PAGE_SIZE}`);
+}
+
+function enterSearchMode() {
+  if (currentMode === 'today' || currentMode === 'ranking') {
+    lastMode = currentMode;
+  }
+  currentMode = 'search';
+  currentPage = 0;
+  document.getElementById('search-pill').classList.add('open');
+  document.getElementById('timeline-section').style.display = 'none';
+  syncModeButtons();
+  updateSubtitle();
+  const input = document.getElementById('search-input');
+  if (currentSearch && !input.value) input.value = currentSearch;
+  setTimeout(() => { input.focus(); input.select(); }, 60);
+}
+
+function toggleSearchPill() {
+  const pill = document.getElementById('search-pill');
+  const wasOpen = pill.classList.contains('open');
+  if (wasOpen) {
+    pill.classList.remove('open');
+    if (currentMode === 'search') {
+      switchMode(lastMode in { today:1, ranking:1 } ? lastMode : 'today');
+    }
+    return;
+  }
+  enterSearchMode();
+  loadSearchData();
+}
+
+function runSearch() {
+  const input = document.getElementById('search-input');
+  const val = input.value.trim().toUpperCase();
+  if (!val) {
+    input.focus();
+    return;
+  }
+  currentMode = 'search';
+  currentPage = 0;
+  currentSearch = val;
+  enterSearchMode();
+  loadSearchData();
+}
+
+function onSearchKey(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    runSearch();
+  }
+}
+
+function updateSubtitle() {
+  document.getElementById('header-sub').textContent =
+    currentMode === 'today' ? t('subtitle_today')
+    : currentMode === 'search' ? t('subtitle_search')
+    : t('subtitle_ranking');
+}
+
 function loadCurrentData() {
+  if (currentMode === 'search') {
+    loadSearchData();
+    return;
+  }
   currentMode === 'today' ? loadTodayData() : loadRankingData();
 }
 
@@ -2178,14 +2356,21 @@ function syncModeButtons() {
   const todayActive = currentMode === 'today' && DATES[currentDateIdx] === TODAY;
   document.getElementById('btn-today').classList.toggle('active', todayActive);
   document.getElementById('btn-ranking').classList.toggle('active', currentMode === 'ranking');
+  document.getElementById('btn-search').classList.toggle('active', currentMode === 'search');
 }
 
 function switchMode(mode) {
   currentMode = mode;
   currentPage = 0;
+  if (mode === 'today' || mode === 'ranking') {
+    lastMode = mode;
+    currentSearch = '';
+    const input = document.getElementById('search-input');
+    if (input) input.value = '';
+  }
   document.getElementById('timeline-section').style.display = mode === 'today' ? '' : 'none';
-  document.getElementById('header-sub').textContent =
-    mode === 'today' ? t('subtitle_today') : t('subtitle_ranking');
+  document.getElementById('search-pill').classList.toggle('open', mode === 'search');
+  updateSubtitle();
   if (mode === 'today') {
     const todayIdx = DATES.indexOf(TODAY);
     if (currentDateIdx !== todayIdx) {

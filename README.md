@@ -15,9 +15,10 @@
 - **播放平台探测**：`/api/findplay/:id` 并发探测 missav / supjav / jable / 123av 四个在线播放平台哪个能播放该番号，返回可跳转搜索链接与 `playable` 标识；命中缓存，未命中 1 小时（`lua_shared_dict findplay_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 2%）
 - **每日更新列表**：`/api/todayupdate` 通过 DMM FANZA GraphQL API 获取每日更新的作品列表，支持按日期查询、分页
 - **热门排行榜**：`/api/ranking` 按销售排名分数返回热门作品，支持分页
+- **番号搜索**：`/api/search/:id` 通过 DMM 官方 **FANZA affiliate ItemList API**（`sort=match`、`keyword`）按番号搜索，大小写不敏感（上游统一大写）；affiliate 凭据可经 `DMM_API_ID` / `DMM_AFFILIATE_ID` 覆盖；结果缓存 6 小时（`search_cache`，占 `DMM_CACHE_TOTAL` 的 5%）
 - **会话令牌（Session Token）**：`/api/session` 签发**短时效、绑定客户端 IP** 的 token 给前端使用，主 token（`DMM_AUTH_TOKEN`）永不下发浏览器；`/api/*` 同时接受主 token 或 session token（`Authorization: Bearer`）
-- **结果缓存**：todayupdate / ranking / film_sample 缓存 8 小时、magnet 6 小时、findplay（命中 6h / 未命中 1h）、trailer_direct 7 天；缓存内存总预算由 `DMM_CACHE_TOTAL` 按固定比例自动分配（findplay 2% / ranking 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 其余 63%）
-- **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览，卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航；点击番号一键复制；磁力面板三源 Tab + 失败来源「重新获取」、全部无数据「重新获取」；播放平台一键跳转
+- **结果缓存**：todayupdate / ranking / film_sample 缓存 8 小时、search / magnet 6 小时、findplay（命中 6h / 未命中 1h）、trailer_direct 7 天；缓存内存总预算由 `DMM_CACHE_TOTAL` 按固定比例自动分配（findplay 2% / ranking 5% / search 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 其余 58%）
+- **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览、**番号搜索**，卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航；点击番号一键复制；磁力面板三源 Tab + 失败来源「重新获取」、全部无数据「重新获取」；播放平台一键跳转
 - **多配色主题**：6 套小清新配色方案（薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑），一键切换，自动保存
 - **中英双语**：界面支持中文 / English 切换，自动保存偏好
 - **智能 CID 探测**：番号（如 `ABP-477`）自动转成 DMM 内部多个候选 CID（如 `abp00477`、`abp0477`、`1abp477`）逐一探测，命中第一个可用项
@@ -25,7 +26,7 @@
 - **流式视频代理**：`/proxy/video/*` 支持 HTTP Range，可在播放器内拖动进度条；自动带浏览器 UA 与 DMM 的 `Referer` 避免 CDN 403
 - **可选 HTTPS (SSL)**：证书目录存在即自动启用 443；无证书则纯 HTTP，开箱即用
 - **防滥用**：
-  - **`/api/*`**（cover/trailer/trailer_direct/film_sample/magnet/findplay/todayupdate/ranking）**始终**需要 `Authorization: Bearer <token>`，token 可为主 token（`DMM_AUTH_TOKEN`）或 `/api/session` 签发的 session token
+  - **`/api/*`**（cover/trailer/trailer_direct/film_sample/magnet/findplay/todayupdate/ranking/search）**始终**需要 `Authorization: Bearer <token>`，token 可为主 token（`DMM_AUTH_TOKEN`）或 `/api/session` 签发的 session token
   - `DMM_API_PROTECT=on` 时，`/api/*` 返回的 `proxy.*` 附带 `DMM_SIGN_TTL` 秒内有效的 **HMAC-SHA256 签名 URL**；`/proxy/*` 需凭该签名访问，并有单 IP 限流与可选 IP 白名单
   - `DMM_API_PROTECT=off` 时，`/api/*` 返回的 `proxy.*` 为普通路径（无签名），`/proxy/*` 完全开放
 
@@ -87,7 +88,9 @@ dmm-proxy-api/
 │   ├── api_magnet.lua       # /api/magnet 实现（磁力链接聚合，多源并发 + 6 小时缓存）
 │   ├── api_findplay.lua     # /api/findplay 实现（播放平台探测，多平台并发 + 缓存）
 │   ├── api_todayupdate.lua # /api/todayupdate 实现（每日更新列表）
-│   └── api_ranking.lua     # /api/ranking 实现（热门排行榜）
+│   ├── api_ranking.lua     # /api/ranking 实现（热门排行榜）
+│   ├── api_search.lua      # /api/search 实现（FANZA affiliate 番号搜索，关键字大写 + 缓存）
+│   └── api_session.lua     # /api/session 实现（前端短时效 session token）
 ├── static/                 # 前端静态文件（docker volume 挂载，改后刷新即可）
 │   └── index.html          # SPA 单页应用（今日更新 / 排行榜 / 主题切换 / 多语言）
 └── vendor/resty/           # 本地 vendor 的 lua-resty-http（纯 Lua，无需额外依赖）
@@ -121,7 +124,9 @@ cp .env.example .env
 | `DMM_RATE_PER_MIN` | `240` | on 时单 IP 每分钟请求上限 |
 | `DMM_ALLOW_IPS` | 空 | on 时可选的 IP 白名单，逗号分隔 IP 与 CIDR（如 `1.2.3.4,203.0.113.0/24`），空=放行全部 |
 | `DMM_FRONTEND_TTL` | `900` | `/api/session` 签发的 session token 有效秒数（默认 15 分钟；绑定客户端 IP，过期或换 IP 即 403） |
-| `DMM_CACHE_TOTAL` | `250` | 全部查询结果缓存的共享内存总预算（MB），启动时按固定比例分配（findplay 2% / ranking 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 63%）；非法值或 <30 回退 250 |
+| `DMM_CACHE_TOTAL` | `250` | 全部查询结果缓存的共享内存总预算（MB），启动时按固定比例分配（findplay 2% / ranking 5% / search 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 58%）；非法值或 <30 回退 250 |
+| `DMM_API_ID` | 内置默认 | `/api/search` 用的 DMM FANZA affiliate WebAPI ID（空则用内置默认） |
+| `DMM_AFFILIATE_ID` | 内置默认 | `/api/search` 用的 affiliate ID（格式 `媒体ID-站点ID`，空则用内置默认） |
 | `DMM_PROXY_PORT` | `80` | 宿主机对外 HTTP 端口 |
 | `DMM_PROXY_SSL_PORT` | `443` | 宿主机对外 HTTPS 端口 |
 | `DMM_CERT_DIR` | `/etc/ssl/dmm` | 容器内证书目录 |
@@ -214,6 +219,9 @@ curl -s -H "$HEADER" http://localhost:8080/api/todayupdate
 
 # 热门排行榜
 curl -s -H "$HEADER" http://localhost:8080/api/ranking
+
+# 番号搜索（大小写不敏感，上游统一大写）
+curl -s -H "$HEADER" http://localhost:8080/api/search/abp-477
 ```
 
 ---
@@ -434,6 +442,51 @@ Authorization: Bearer <token>
 
 参数：`limit`(30/60/120，默认 30)、`offset`(默认 0)。
 
+### FANZA 番号搜索
+
+```
+GET /api/search/:id
+Authorization: Bearer <token>
+```
+
+通过 DMM 官方 **affiliate ItemList API**（`site=FANZA`、`sort=match`、`keyword`）按番号搜索。路径 id **大小写不敏感**，服务端统一**转大写**后发给上游（`/api/search/abp-477` 与 `/api/search/ABP-477` 等价）。支持 `offset`（0 基）/ `hits`（默认 30，最大 100）分页；结果按 `(关键字, 偏移)` 缓存 **6 小时**（`lua_shared_dict search_cache`，占 `DMM_CACHE_TOTAL` 的 5%）。affiliate 凭据经 `DMM_API_ID` / `DMM_AFFILIATE_ID` 覆盖（默认内置）。
+
+```http
+# 小写番号也能搜（上游统一大写）
+GET http://localhost:8080/api/search/abp-477
+Authorization: Bearer <token>
+```
+
+**响应 `200`（节选）**
+
+```json
+{
+  "keyword": "ABP-477",
+  "total": 2,
+  "hits": 30,
+  "limit": 30,
+  "offset": 0,
+  "hasNext": false,
+  "count": 2,
+  "works": [
+    {
+      "id": "118abp477",
+      "title": "エンドレスセックス AIKA",
+      "cover": { "medium": "...", "large": "..." },
+      "deliveryStartAt": "2016-05-10 10:00:00",
+      "actresses": [{ "id": 1008887, "name": "AIKA" }],
+      "maker": { "id": 40136, "name": "プレステージ" },
+      "review": { "average": 4.41, "count": 32 },
+      "price": { "price": 4180 },
+      "url": "https://www.dmm.co.jp/...",
+      "floor": "dvd"
+    }
+  ]
+}
+```
+
+`sort=match` 为模糊匹配：无精确条目的关键词会返回部分匹配作品（`total` 为命中总数）。
+
 ### 磁力链接聚合
 
 ```
@@ -443,7 +496,7 @@ Authorization: Bearer <token>
 
 > 番号不区分大小写；响应 `200` 状态下各来源单独报错。
 
-按番号并发聚合三个独立站点的磁力链接，结果按 `sources[]` 分组：**sukebei**（RSS，磁力由 infoHash + 官方 tracker 重建）、**javdb**（搜索页 → 详情页磁力表格）、**javbus**（搜索页 → `gid/uc` → ajax 磁力表格）。单个来源失败不影响其它来源（该来源 `count: 0` 并附 `error`）。结果按 `(来源, 番号)` 缓存 **6 小时**（`lua_shared_dict magnet_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 63%）。
+按番号并发聚合三个独立站点的磁力链接，结果按 `sources[]` 分组：**sukebei**（RSS，磁力由 infoHash + 官方 tracker 重建）、**javdb**（搜索页 → 详情页磁力表格）、**javbus**（搜索页 → `gid/uc` → ajax 磁力表格）。单个来源失败不影响其它来源（该来源 `count: 0` 并附 `error`）。结果按 `(来源, 番号)` 缓存 **6 小时**（`lua_shared_dict magnet_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 58%）。
 
 ```http
 # 全部三个来源

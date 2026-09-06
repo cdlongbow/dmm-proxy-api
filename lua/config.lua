@@ -43,6 +43,15 @@ _M.WEB = {
     referer = "https://www.dmm.co.jp/",
 }
 
+-- DMM FANZA affiliate API credentials used by /api/search/:id (番号 search).
+-- Overridable via DMM_API_ID / DMM_AFFILIATE_ID so they don't have to live in
+-- the repo; the values below are the common FANZA affiliate defaults.
+_M.AFFILIATE = {
+    endpoint = "https://api.dmm.com/affiliate/v3/ItemList",
+    api_id = os.getenv("DMM_API_ID") or "UrwskPfkqQ0DuVry2gYL",
+    affiliate_id = os.getenv("DMM_AFFILIATE_ID") or "10278-996",
+}
+
 -- CID conversion: user input "ABP-477" -> try multiple DMM CID variants.
 -- DMM internal ids are many-to-many with product ids (e.g. dldss00409 vs 1dldss409),
 -- so we probe several variants.

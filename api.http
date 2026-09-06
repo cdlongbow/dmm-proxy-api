@@ -44,6 +44,15 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/ranking?limit=60&offset=30
 Authorization: Bearer {{token}}
 
+### 2.6 FANZA 番号搜索（始终需 token；路径 id 不区分大小写，上游统一转大写）
+# 走 DMM 官方 affiliate ItemList API：site=FANZA, sort=match, keyword=<大写番号>
+GET {{host}}/api/search/abp-477
+Authorization: Bearer {{token}}
+
+### 2.6.1 FANZA 番号搜索 - 大写 + 分页（offset 0 基，hits 默认 30）
+GET {{host}}/api/search/IPX-685?offset=0&hits=30
+Authorization: Bearer {{token}}
+
 ### 3. 预告片信息（始终需 token；返回的 proxy 在 on 时为签名 URL）
 GET {{host}}/api/trailer/SNOS-213
 Authorization: Bearer {{token}}

@@ -9,8 +9,8 @@
 #
 # Also renders /usr/local/openresty/nginx/conf/dmm.d/cache_dicts.conf from
 # $DMM_CACHE_TOTAL (total MB for all query-result caches). Split by fixed
-# percentages: findplay 2%, ranking 5%, trailer 5%, todayupdate 5%,
-# film_sample 20%, magnet gets the remaining share (63%). Default 250 if unset.
+# percentages: findplay 2%, ranking 5%, search 5%, trailer 5%, todayupdate 5%,
+# film_sample 20%, magnet gets the remaining share (58%). Default 250 if unset.
 
 set -e
 
@@ -36,13 +36,14 @@ if [ "$CACHE_TOTAL" -lt 30 ]; then
 fi
 
 # Integer percentage split (truncating). magnet swallows the exact remainder so
-# the six caches always add up to exactly CACHE_TOTAL.
+# the seven caches always add up to exactly CACHE_TOTAL.
 FINDPLAY_M=$(( CACHE_TOTAL * 2 / 100 ))
 RANKING_M=$(( CACHE_TOTAL * 5 / 100 ))
+SEARCH_M=$(( CACHE_TOTAL * 5 / 100 ))
 TRAILER_M=$(( CACHE_TOTAL * 5 / 100 ))
 TODAYUPDATE_M=$(( CACHE_TOTAL * 5 / 100 ))
 FILM_SAMPLE_M=$(( CACHE_TOTAL * 20 / 100 ))
-FIXED_M=$(( FINDPLAY_M + RANKING_M + TRAILER_M + TODAYUPDATE_M + FILM_SAMPLE_M ))
+FIXED_M=$(( FINDPLAY_M + RANKING_M + SEARCH_M + TRAILER_M + TODAYUPDATE_M + FILM_SAMPLE_M ))
 MAGNET_M=$(( CACHE_TOTAL - FIXED_M ))
 
 min1() {
@@ -54,6 +55,7 @@ min1() {
 }
 FINDPLAY_M=$(min1 "$FINDPLAY_M")
 RANKING_M=$(min1 "$RANKING_M")
+SEARCH_M=$(min1 "$SEARCH_M")
 TRAILER_M=$(min1 "$TRAILER_M")
 TODAYUPDATE_M=$(min1 "$TODAYUPDATE_M")
 FILM_SAMPLE_M=$(min1 "$FILM_SAMPLE_M")
@@ -63,12 +65,13 @@ cat > "$CONF_DIR/cache_dicts.conf" <<EOF
 # Auto-generated from DMM_CACHE_TOTAL=${CACHE_TOTAL}m by entrypoint.sh — do not edit.
 lua_shared_dict magnet_cache ${MAGNET_M}m;
 lua_shared_dict findplay_cache ${FINDPLAY_M}m;
+lua_shared_dict search_cache ${SEARCH_M}m;
 lua_shared_dict trailer_cache ${TRAILER_M}m;
 lua_shared_dict todayupdate_cache ${TODAYUPDATE_M}m;
 lua_shared_dict ranking_cache ${RANKING_M}m;
 lua_shared_dict film_sample_cache ${FILM_SAMPLE_M}m;
 EOF
-echo "[entrypoint] cache dicts rendered (total ${CACHE_TOTAL}m): magnet=${MAGNET_M}m findplay=${FINDPLAY_M}m trailer=${TRAILER_M}m todayupdate=${TODAYUPDATE_M}m ranking=${RANKING_M}m film_sample=${FILM_SAMPLE_M}m"
+echo "[entrypoint] cache dicts rendered (total ${CACHE_TOTAL}m): magnet=${MAGNET_M}m findplay=${FINDPLAY_M}m search=${SEARCH_M}m trailer=${TRAILER_M}m todayupdate=${TODAYUPDATE_M}m ranking=${RANKING_M}m film_sample=${FILM_SAMPLE_M}m"
 
 if [ -f "$CERT_DIR/$CERT_FILE" ] && [ -f "$CERT_DIR/$KEY_FILE" ]; then
     echo "[entrypoint] SSL enabled: using $CERT_DIR/{$CERT_FILE,$KEY_FILE}"

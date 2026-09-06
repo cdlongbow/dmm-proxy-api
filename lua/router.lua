@@ -146,4 +146,20 @@ function _M.handle_ranking()
     ranking.handle()
 end
 
+function _M.handle_search()
+    local id = ngx.var.api_id
+    if not id or id == "" then
+        ngx.status = 400
+        ngx.header["Content-Type"] = "application/json; charset=utf-8"
+        ngx.say(cjson.encode({
+            error = "bad_request",
+            message = "Missing id parameter. Usage: /api/search/:id",
+        }))
+        return
+    end
+
+    local search = require "api_search"
+    search.handle(id)
+end
+
 return _M
