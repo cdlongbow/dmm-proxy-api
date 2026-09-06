@@ -825,8 +825,10 @@ GET /api/search/:id
 
 1. 先查内存缓存（`search_cache`，`lua_shared_dict`，容量由 `DMM_CACHE_TOTAL` 分配、占 5%，键为 `sr:<CODE>:<offset>`），命中直接返回（TTL 6 小时）。
 2. 展开番号为候选数字版 id：`<maker>` + `%05d` / `%04d` / `%03d`，并叠加 `1`、`d_`、`h_` 前缀（去重后按优先序探测，通常第 1 个即命中）。
-3. 对每个候选调 `ContentPageData`；命中（`ppvContent` 非空）→ 归一化详情 → 构造 `works[0]`。全部未命中或 GraphQL 失败 → `works` 为空（`200`）。
-4. 详情结果在 `search_cache` 以 `gc:<cid>` 键缓存（TTL 7 小时），同一数字 id 翻页/重复搜索不再请求。
+3. 对每个候选调 `ContentPageData`；命中（`ppvContent` 非空）→ 归一化详情 → 构造 `works[0]`（`source="graphql"`）。全部未命中或 GraphQL 失败 → 走 **javbus 兜底**。
+4. **javbus 兜底（`source="javbus"`）**：查询 javbus 第三方 JSON API（`https://javbus-api.131433.xyz/api/movies/<番号>`，社区维护的 javbus 数据接口，返回结构化 JSON 而非 HTML），命中后解析为与前端兼容的 work 对象（旧实现直接抓 javbus.com HTML，因反爬 + 地区门控，且 javbus 自身 `/pics/` 图片会被浏览器 CORS 拦截而弃用）。javbus 来源的字段形如：`id`（=番号）、`title`、`director`（缺失 → `"未知"`）、`maker`（製作商）、`label`（發行商，数组）、`series`（系列，数组）、`genres` / `actresses`（纯字符串数组）、`sampleImages`（`smallUrl`/`largeUrl` 均取外部 CDN，如 mgstage，避免 CORS）、`cover`（javbus 图源）、`webUrl`（javbus 详情页原链）；无 `description` / `price` / `review` / `directors` 数组等 DMM 专属字段。前端按 `source` 区分渲染。
+5. 两者皆无结果 → `works` 为空（`200`）。
+6. 详情结果在 `search_cache` 以 `gc:<cid>` 键缓存（TTL 7 小时），同一数字 id 翻页/重复搜索不再请求。
 
 **示例请求**
 
@@ -874,14 +876,49 @@ Authorization: Bearer <token>
 }
 ```
 
-> 候选探测基于 DMM 数字版 id 规律（`maker + 5 位补零序号` 最常见）。对不遵守该规律的少量老作品可能找不到（返回空 `works`），此时可换用其它接口定位。
+> 候选探测基于 DMM 数字版 id 规律（`maker + 5 位补零序号` 最常见）。对不遵守该规律的少量老作品（如 REBD 系列 ID 为 `h_346rebd1061` 而非 `rebd01061`）会在 javbus 兜底命中；若 javbus 亦无收录才返回空 `works`。
+
+**javbus 兜底示例响应 `200`（`source="javbus"`）**
+
+```json
+{
+  "keyword": "ABF-365",
+  "source": "javbus",
+  "total": 1,
+  "count": 1,
+  "hits": 1,
+  "limit": 1,
+  "offset": 0,
+  "hasNext": false,
+  "works": [
+    {
+      "id": "ABF-365",
+      "makerContentId": "ABF-365",
+      "title": "ABF-365 リミットブレイクSEX 絶対的美少女の殻をブチ破るドM覚醒性交 VOL.13 釈アリス",
+      "floor": "javbus",
+      "duration": { "seconds": 8100, "minutes": 135 },
+      "cover": { "medium": "https://www.javbus.com/pics/cover/cct5_b.jpg", "large": "https://www.javbus.com/pics/cover/cct5_b.jpg" },
+      "deliveryStartDate": "2026-07-17",
+      "makerReleasedAt": "2026-07-17",
+      "director": "未知",
+      "series": ["リミットブレイクSEX"],
+      "maker": "プレステージ",
+      "label": ["ABSOLUTELYFANTASIA"],
+      "genres": ["無毛", "顏射", "單體作品", "フルハイビジョン(FHD)", "オモチャ"],
+      "actresses": ["釈アリス"],
+      "sampleImages": [{ "number": 1, "smallUrl": "https://image.mgstage.com/images/prestige/abf/365/cap_e_0_abf-365.jpg", "largeUrl": "https://image.mgstage.com/images/prestige/abf/365/cap_e_0_abf-365.jpg" }],
+      "webUrl": "https://www.javbus.com/ABF-365"
+    }
+  ]
+}
+```
 
 **响应字段**
 
 | 字段 | 说明 |
 |------|------|
 | `keyword` | 规范化番号（大写、去空白） |
-| `source` | 恒为 `graphql` |
+| `source` | `graphql`（DMM 数字版）或 `javbus`（兜底） |
 | `total` / `count` | 命中数（0 或 1） |
 | `works[].id` | 数字版 content id（如 `ipx00685`，用作「配信品番」） |
 | `works[].makerContentId` | メーカー品番（如 `SSIS-666`） |
@@ -908,6 +945,9 @@ Authorization: Bearer <token>
 | `works[].sampleImages` | 剧照列表 `[{number, smallUrl, largeUrl}]` |
 | `works[].sample2DMovie` | 2D 预告片 `{hlsMovieUrl, highestMovieUrl}` |
 | `works[].sampleVRMovie` | VR 预告片链接（VR 作品才有） |
+| `works[].webUrl` | javbus 兜底时附带：源站详情页链接 |
+
+> `source="javbus"` 时字段结构与源不同：`id`/`makerContentId` 均等于番号；`director` 为纯字符串（缺失为 `"未知"`）；`series`/`label`/`genres`/`actresses` 为纯字符串数组（非 `{id,name}` 对象）；`maker` 为纯字符串；`sampleImages.smallUrl`/`largeUrl` 取外部 CDN 源（mgstage 等，非 javbus `/pics/`）；不含 `description`/`price`/`review`/`directors`。前端按 `source` 分支渲染。
 
 **错误码**
 
@@ -992,8 +1032,8 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 
 - **今日更新**：7 天时间线选择器 + 卡片网格浏览
 - **热门排行**：销量排名展示，含排名序号与收藏数
-- **番号搜索**：输入番号（如 `ABP-477`）一键搜索，走 GraphQL 数字版直接探测（无 appid），结果以信息化布局展示完整详情
-- **图片预览**：点击卡片封面弹出大图弹窗，封面 + 剧照轮播，键盘 `←` `→` / `Esc` 导航；点击**番号**自动复制到剪贴板（含弹窗内番号，带"已复制"提示）
+- **番号搜索**：输入番号（如 `ABP-477`）一键搜索，走 GraphQL 数字版直接探测（无 appid），结果以信息化布局展示完整详情；DMM 查不到时自动用 javbus JSON API 兜底，前端按 `source` 分支渲染两组字段
+- **图片预览**：点击卡片封面弹出大图弹窗，封面 + 剧照轮播，键盘 `←` `→` / `Esc` 导航；点击**番号**自动复制到剪贴板（含弹窗内番号，带"已复制"提示）；javbus 来源的封面（`www.javbus.com` 域，浏览器 CORS 拦截）在卡片与大图弹窗中替换为内置占位图，样图（mgstage CDN）正常显示
 - **磁力面板**：三个来源（SUKEBEI / JAVDB / JAVBUS）Tab 展示磁力列表，磁力点击复制；**某个来源失败时该 Tab 内显示「重新获取」按钮**（`?s=<来源>` 定向重拉）；三个来源全为空的番号显示"当前番号暂无磁力链接"+「重新获取」按钮（全量重拉）
 - **播放平台**：点「跳转播放」并发探测 missav / supjav / jable / 123av 是否可播，可跳转的显示按钮、探测失败的标注"探测失败"
 - **配色主题**：6 套小清新风格一键切换（薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑）
@@ -1015,11 +1055,13 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 
 | API 字段 | 前端用途 |
 |----------|----------|
-| `cover.medium / cover.large` | 卡片封面图 |
-| `sampleImages[].largeUrl` | 弹窗图片列表（封面 + 全部剧照） |
-| `price.price / price.discountPrice` | 卡片价格显示（円） |
-| `actresses[].name` | 卡片演员标签 |
-| `maker.name` | 卡片商家标签 |
+| `cover.medium / cover.large` | 卡片封面图（javbus 来源为 javbus 域封面 → 替换为内置占位图） |
+| `sampleImages[].largeUrl` | 弹窗图片列表（封面 + 全部剧照；javbus 来源无封面，仅样图，样图为外部 CDN） |
+| `price.price / price.discountPrice` | 卡片价格显示（单位为円） |
+| `priceTag` | 搜索结果价格角标 `<span class="sr-price-tag">…円</span>`，仅 DMM（graphql）来源有价格 |
+| `actresses` | 卡片演员标签（graphql 取 `[].name`；javbus 为纯字符串数组） |
+| `maker` | 卡片商家标签（graphql 为对象取其 `name`；javbus 为纯字符串「製作商」） |
+| `director` / `directors` | 搜索详情行「監督」：javbus 用 `director` 字符串（缺失 `"未知"`），graphql 用 `directors[].name` |
 | `bookmarkCount` | 排行榜收藏数（♥ N） |
 | `rank` (offset + i) | 排行榜排名（#N） |
 | `hasNext / total / offset / limit` | 分页控制 |

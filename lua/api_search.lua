@@ -137,13 +137,24 @@ function _M.handle(raw_id)
         local detail = content.get_by_code(code)
 
         local works = {}
+        local source = "graphql"
         if detail then
             works[1] = work_from_detail(detail)
+        else
+            -- FANZA GraphQL found nothing -> javbus detail page as fallback.
+            local javbus = require "api_javbus"
+            local jdet, jerr = javbus.fetch(code)
+            if jdet then
+                works[1] = jdet
+                source = "javbus"
+            else
+                ngx.log(ngx.ERR, "search " .. code .. ": javbus fallback failed: " .. tostring(jerr))
+            end
         end
 
         local body = cjson.encode({
             keyword = code,
-            source = "graphql",
+            source = source,
             total = #works,
             count = #works,
             hits = 1,

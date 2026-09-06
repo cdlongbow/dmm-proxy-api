@@ -48,12 +48,20 @@ Authorization: Bearer {{token}}
 # 不依赖 appid：番号直接展开候选数字版 id（maker+补零序号+前缀），经 video.dmm.co.jp
 # GraphQL ContentPageData 探测，首个命中即返回完整详情（description/duration/directors/
 # series/relatedTags/playableDevices/makerReleasedAt/sample2DMovie 等，见 api.md 4.6）
+# DMM 查不到时自动用 javbus JSON API 兜底（source="javbus"，返回识别码/发行日/时长/导演
+# [缺失为"未知"]/制作商/发行商/系列/类别/演员/样图[外部CDN]） + webUrl，两者皆无则空 works
 GET {{host}}/api/search/abp-477
 Authorization: Bearer {{token}}
 
 ### 2.6.1 FANZA 番号搜索 - 大写（分页参数保留兼容）
 # IPX-685 -> 首个候选 ipx00685 命中，返回完整富化详情
 GET {{host}}/api/search/IPX-685?offset=0&hits=30
+Authorization: Bearer {{token}}
+
+### 2.6.2 FANZA 番号搜索 - javbus 兜底（DMM 无数字版时）
+# ABF-364 -> GraphQL 未命中，自动走 javbus JSON API（https://javbus-api.131433.xyz/api/movies/
+# ABF-364），source="javbus"，director 缺失显示"未知"，样图为外部 CDN，附 webUrl
+GET {{host}}/api/search/ABF-364
 Authorization: Bearer {{token}}
 
 ### 3. 预告片信息（始终需 token；返回的 proxy 在 on 时为签名 URL）
