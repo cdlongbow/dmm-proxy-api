@@ -1798,7 +1798,7 @@ function hdTags(name, extraTags) {
 function magnetRow(m) {
   const tags = hdTags(m.name, m.tags);
   const tagHtml = tags.map(tg => `<span class="ap-tag ${tg.cls}">${escHtml(tg.text)}</span>`).join('');
-  const files = m.files != null ? `${m.files} ${t('files')}` : '—';
+  const files = m.files != null && m.files > 0 ? `${m.files} ${t('files')}` : '—';
   return `
     <div class="ap-row ap-magnet" data-magnet="${escAttr(m.magnet)}">
       <div class="ap-name">${escHtml(m.name)}</div>

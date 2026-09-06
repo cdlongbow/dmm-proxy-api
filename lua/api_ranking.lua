@@ -6,6 +6,28 @@ local _M = {}
 
 local ENDPOINT = "https://api.video.dmm.co.jp/graphql"
 
+local CACHE_TTL = 8 * 3600
+
+local function cache_key(limit, offset)
+    return "rk:" .. tostring(limit) .. ":" .. tostring(offset)
+end
+
+local function cache_get(limit, offset)
+    local dict = ngx.shared.ranking_cache
+    if not dict then
+        return nil
+    end
+    return dict:get(cache_key(limit, offset))
+end
+
+local function cache_set(limit, offset, body)
+    local dict = ngx.shared.ranking_cache
+    if not dict then
+        return
+    end
+    dict:set(cache_key(limit, offset), body, CACHE_TTL)
+end
+
 local QUERY = [[query AvSearch($limit: Int!, $offset: Int, $floor: PPVFloor, $sort: ContentSearchPPVSort!, $filter: ContentSearchPPVFilterInput, $excludeUndelivered: Boolean!, $facetLimit: Int!) {
   legacySearchPPV(limit: $limit, offset: $offset, floor: $floor, sort: $sort, filter: $filter, facetLimit: $facetLimit, includeExplicit: true, excludeUndelivered: $excludeUndelivered) {
     result {
@@ -170,6 +192,14 @@ function _M.handle()
         limit = MAX_RANKING - offset
     end
 
+    local cached = cache_get(limit, offset)
+    if cached then
+        ngx.status = 200
+        ngx.header["Content-Type"] = "application/json; charset=utf-8"
+        ngx.say(cached)
+        return
+    end
+
     local result, err = fetch_ranking(offset, limit)
     if not result then
         ngx.log(ngx.ERR, "ranking fetch failed: " .. tostring(err))
@@ -249,16 +279,19 @@ function _M.handle()
         works[i] = work
     end
 
-    ngx.status = 200
-    ngx.header["Content-Type"] = "application/json; charset=utf-8"
-    ngx.say(cjson.encode({
+    local body = cjson.encode({
         total = MAX_RANKING,
         limit = limit,
         offset = offset,
         hasNext = (offset + #works) < MAX_RANKING,
         count = #works,
         works = works,
-    }))
+    })
+    cache_set(limit, offset, body)
+
+    ngx.status = 200
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(body)
 end
 
 return _M

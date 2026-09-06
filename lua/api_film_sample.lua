@@ -19,6 +19,24 @@ local QUERY = [[query FetchFanzaTvPlusContent($id: ID!, $device: Device!, $isFor
   }
 }]]
 
+local CACHE_TTL = 8 * 3600
+
+local function cache_get(cid)
+    local dict = ngx.shared.film_sample_cache
+    if not dict then
+        return nil
+    end
+    return dict:get("fs:" .. cid)
+end
+
+local function cache_set(cid, body)
+    local dict = ngx.shared.film_sample_cache
+    if not dict then
+        return
+    end
+    dict:set("fs:" .. cid, body, CACHE_TTL)
+end
+
 -- Fetch all sample images for a cid via the public FANZA TV GraphQL API.
 -- Returns { {image=, imageLarge=}, ... } or nil.
 local ENDPOINT = "https://api.tv.dmm.co.jp/graphql"
@@ -71,6 +89,14 @@ function _M.handle(raw_id)
     local cids = config.to_cids(raw_id)
 
     for _, cid in ipairs(cids) do
+        local cached = cache_get(cid)
+        if cached then
+            ngx.status = 200
+            ngx.header["Content-Type"] = "application/json; charset=utf-8"
+            ngx.say(cached)
+            return
+        end
+
         local pics, err = fetch_samples(cid)
         if not pics then
             ngx.log(ngx.ERR, "film_sample fetch failed for cid=" .. cid .. ": " .. tostring(err))
@@ -89,14 +115,17 @@ function _M.handle(raw_id)
                 }
             end
 
-            ngx.status = 200
-            ngx.header["Content-Type"] = "application/json; charset=utf-8"
-            ngx.say(cjson.encode({
+            local body = cjson.encode({
                 id = string.upper(raw_id),
                 cid = cid,
                 total = #samples,
                 samples = samples,
-            }))
+            })
+            cache_set(cid, body)
+
+            ngx.status = 200
+            ngx.header["Content-Type"] = "application/json; charset=utf-8"
+            ngx.say(body)
             return
         end
     end

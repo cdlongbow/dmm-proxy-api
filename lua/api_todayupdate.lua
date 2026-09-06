@@ -6,6 +6,28 @@ local _M = {}
 
 local ENDPOINT = "https://api.video.dmm.co.jp/graphql"
 
+local CACHE_TTL = 8 * 3600
+
+local function cache_key(date, limit, offset)
+    return "tu:" .. date .. ":" .. tostring(limit) .. ":" .. tostring(offset)
+end
+
+local function cache_get(date, limit, offset)
+    local dict = ngx.shared.todayupdate_cache
+    if not dict then
+        return nil
+    end
+    return dict:get(cache_key(date, limit, offset))
+end
+
+local function cache_set(date, limit, offset, body)
+    local dict = ngx.shared.todayupdate_cache
+    if not dict then
+        return
+    end
+    dict:set(cache_key(date, limit, offset), body, CACHE_TTL)
+end
+
 local QUERY = [[query AvSearch($limit: Int!, $offset: Int, $floor: PPVFloor, $sort: ContentSearchPPVSort!, $filter: ContentSearchPPVFilterInput, $excludeUndelivered: Boolean!, $facetLimit: Int!) {
   legacySearchPPV(limit: $limit, offset: $offset, floor: $floor, sort: $sort, filter: $filter, facetLimit: $facetLimit, includeExplicit: true, excludeUndelivered: $excludeUndelivered) {
     result {
@@ -182,6 +204,14 @@ function _M.handle()
     local limit = parse_limit(args.limit)
     local offset = parse_int_param(args.offset, 0)
 
+    local cached = cache_get(date, limit, offset)
+    if cached then
+        ngx.status = 200
+        ngx.header["Content-Type"] = "application/json; charset=utf-8"
+        ngx.say(cached)
+        return
+    end
+
     local result, err = fetch_daily(date, offset, limit)
     if not result then
         ngx.log(ngx.ERR, "todayupdate fetch failed for date=" .. date .. ": " .. tostring(err))
@@ -259,9 +289,7 @@ function _M.handle()
         works[i] = work
     end
 
-    ngx.status = 200
-    ngx.header["Content-Type"] = "application/json; charset=utf-8"
-    ngx.say(cjson.encode({
+    local body = cjson.encode({
         date = date,
         total = page.totalCount or #works,
         limit = page.limit or limit,
@@ -269,7 +297,12 @@ function _M.handle()
         hasNext = page.hasNext or false,
         count = #works,
         works = works,
-    }))
+    })
+    cache_set(date, limit, offset, body)
+
+    ngx.status = 200
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(body)
 end
 
 return _M
