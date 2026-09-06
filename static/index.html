@@ -456,6 +456,185 @@
     grid-template-columns: repeat(5, 1fr);
     gap: 18px;
   }
+  /* ---- search results (detail layout, spans two grid cells) ---- */
+  .search-result {
+    grid-column: span 2;
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 20px;
+    background:
+      linear-gradient(180deg, rgba(127,127,127,0.035), transparent 150px),
+      var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 16px;
+    overflow: hidden;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .search-result:hover {
+    transform: translateY(-2px);
+    border-color: var(--primary-dark);
+    box-shadow: 0 12px 30px rgba(80,90,120,0.14);
+  }
+  .sr-cover {
+    align-self: start;
+  }
+  .sr-cover-img-wrap { position: relative; }
+  .sr-cover-img {
+    width: 100%;
+    aspect-ratio: 2/3;
+    object-fit: cover;
+    border-radius: 14px;
+    background: var(--border);
+    display: block;
+    cursor: zoom-in;
+    transition: transform .22s ease;
+    box-shadow: 0 4px 14px rgba(40,50,80,0.16);
+  }
+  .sr-cover:hover .sr-cover-img { transform: scale(1.02); }
+  .sr-cover-badges {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    max-width: calc(100% - 16px);
+  }
+  .sr-badge {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: .3px;
+    color: #fff;
+    backdrop-filter: blur(4px);
+  }
+  .sr-badge-code { background: rgba(25,35,55,0.58); }
+  .sr-badge-maker { background: rgba(232,168,124,0.82); }
+  .sr-info {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sr-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .sr-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 16.5px;
+    font-weight: 700;
+    line-height: 1.45;
+    color: var(--text);
+    letter-spacing: .2px;
+  }
+  .sr-price-tag {
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--primary-dark);
+    background: linear-gradient(135deg, rgba(107,158,138,0.16), rgba(107,158,138,0.05));
+    border: 1px solid rgba(107,158,138,0.35);
+    padding: 4px 11px;
+    border-radius: 999px;
+    white-space: nowrap;
+    margin-top: 3px;
+  }
+  .sr-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .sr-mchip {
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(154,140,191,0.09);
+    color: var(--text-light);
+    border: 1px solid var(--border);
+  }
+  .sr-mchip.rate {
+    color: #c9781a;
+    background: rgba(240,180,90,0.14);
+    border-color: rgba(240,180,90,0.42);
+  }
+  .sr-table {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .sr-row {
+    display: flex;
+    font-size: 12.5px;
+    line-height: 1.55;
+    gap: 10px;
+  }
+  .sr-label {
+    flex: 0 0 88px;
+    color: var(--text-light);
+    flex-shrink: 0;
+    font-weight: 600;
+  }
+  .sr-value {
+    color: var(--text);
+    word-break: break-word;
+    min-width: 0;
+  }
+  .sr-chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 7px;
+    margin: 1px 3px 1px 0;
+    background: rgba(154,140,191,0.09);
+    color: var(--primary-dark);
+    border: 1px solid rgba(154,140,191,0.16);
+  }
+  .sr-desc {
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--text-light);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    cursor: pointer;
+    border-left: 3px solid var(--border);
+    padding-left: 10px;
+  }
+  .sr-desc.expanded {
+    -webkit-line-clamp: unset;
+    color: var(--text);
+  }
+  .sr-thumbs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 2px 6px;
+    margin-top: 2px;
+  }
+  .sr-thumbs img {
+    width: 78px;
+    aspect-ratio: 2/3;
+    object-fit: cover;
+    border-radius: 8px;
+    background: var(--border);
+    cursor: zoom-in;
+    transition: transform .16s ease, box-shadow .16s ease;
+  }
+  .sr-thumbs img:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(40,50,80,0.18);
+  }
   .card {
     background: var(--card-bg);
     border-radius: var(--radius);
@@ -1148,10 +1327,22 @@
   }
   @media (max-width: 992px) {
     .cards { grid-template-columns: repeat(3, 1fr); }
+    .search-result { grid-template-columns: 150px 1fr; gap: 14px; padding: 14px; }
+    .sr-title { font-size: 15px; }
+    .sr-price-tag { font-size: 12px; padding: 2px 9px; }
+    .sr-thumbs img { width: 64px; }
     .timeline-wrap { padding: 0 48px; }
   }
   @media (max-width: 700px) {
     .cards { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .search-result { grid-template-columns: 104px 1fr; grid-column: 1 / -1; gap: 12px; padding: 10px 12px; border-radius: 14px; }
+    .sr-label { flex-basis: 76px; }
+    .sr-title { font-size: 14px; }
+    .sr-head { flex-direction: column; align-items: stretch; gap: 6px; }
+    .sr-price-tag { align-self: flex-start; margin-top: 0; }
+    .sr-mchip { font-size: 10.5px; padding: 2px 7px; }
+    .sr-info { gap: 8px; }
+    .sr-thumbs img { width: 56px; border-radius: 6px; }
     .content {
       padding: 20px 14px calc(80px + env(safe-area-inset-bottom, 0px));
     }
@@ -1342,6 +1533,26 @@ const I18N = {
     search_place: '输入番号',
     search_title: '搜索 %s',
     search_empty: '请输入番号',
+    
+    sr_delivery: '配信开始日',
+    sr_released: '发售日',
+    sr_duration: '收錄时长',
+    sr_actresses: '演员',
+    sr_directors: '監督',
+    sr_series: '系列',
+    sr_maker: '厂商',
+    sr_label: '品牌',
+    sr_genres: '类型',
+    sr_tags: '相关标签',
+    sr_dist_code: '配信番号',
+    sr_maker_code: '厂商番号',
+    sr_review: '平均评分',
+    sr_desc: '内容简介',
+    sr_min: ' 分钟',
+    sr_reviews: ' 条评价',
+    sr_expand: '点击展开全文',
+    sr_thumbs_zoom: '点击弹出大图浏览',
+    sr_collapse: '收起全文',
     total: '共 %d 部',
     updates: '更新 — %s',
     ranking: '热门排行',
@@ -1387,6 +1598,25 @@ const I18N = {
     search_place: 'Enter a code',
     search_title: 'Search %s',
     search_empty: 'Please enter a code',
+    sr_delivery: 'Delivery start',
+    sr_released: 'Released',
+    sr_duration: 'Runtime',
+    sr_actresses: 'Actresses',
+    sr_directors: 'Director',
+    sr_series: 'Series',
+    sr_maker: 'Maker',
+    sr_label: 'Label',
+    sr_genres: 'Genres',
+    sr_tags: 'Related tags',
+    sr_dist_code: 'Delivery code',
+    sr_maker_code: 'Maker code',
+    sr_review: 'Rating',
+    sr_desc: 'Description',
+    sr_min: ' min',
+    sr_reviews: ' reviews',
+    sr_expand: 'Click to expand',
+    sr_thumbs_zoom: 'Click to view in the lightbox',
+    sr_collapse: 'Collapse',
     total: 'Total %d items',
     updates: 'Updates — %s',
     ranking: 'Hot Ranking',
@@ -1508,13 +1738,15 @@ function toggleBrowseMode() {
 }
 
 function handleCardClick(e, card, payload) {
-  if (currentBrowse === 'gacha' && !card.classList.contains('revealed')) {
+  // Gacha reveal only applies to the browse-mode cards, never to search results.
+  if (currentBrowse === 'gacha' && card.classList.contains('card') && !card.classList.contains('revealed')) {
     card.classList.add('revealed');
     return;
   }
-  // Only the cover image opens the sample browser; clicking the title,
-  // meta or elsewhere on the card does nothing.
-  if (!e.target.closest('.card-img')) return;
+  // Only the cover image opens the browser; clicking the title, meta or
+  // elsewhere on the card does nothing. Search results use .sr-cover-img,
+  // the browse grid uses .card-img.
+  if (!e.target.closest('.card-img') && !e.target.closest('.sr-cover-img')) return;
   openModal(payload);
 }
 
@@ -1665,6 +1897,113 @@ function mapResponse(data) {
   });
 }
 
+// ========== Search Result Detail Layout ==========
+// One result spans 2 grid cells: a medium cover on the left and an
+// itemized detail list on the right (番号, dates, actresses, 監督, maker, ...),
+// mirroring the DMM product page instead of the daily-update card grid.
+
+function fmtJstDate(s) {
+  if (!s) return '';
+  const str = String(s).trim();
+  if (/Z$/.test(str)) {
+    const d = new Date(str);
+    if (isNaN(d.getTime())) return str.slice(0, 10).replace(/-/g, '/');
+    const j = new Date(d.getTime() + 9 * 3600 * 1000);
+    const p = n => String(n).padStart(2, '0');
+    return `${j.getUTCFullYear()}/${p(j.getUTCMonth() + 1)}/${p(j.getUTCDate())}`;
+  }
+  return str.slice(0, 10).replace(/-/g, '/');
+}
+
+function renderSearchResult(data) {
+  const container = document.getElementById('cards');
+  const titleEl = document.getElementById('content-title');
+  const countEl = document.getElementById('content-count');
+
+  if (!data || !data.works || data.works.length === 0) {
+    container.innerHTML = `<div class="status-msg">${t('no_data')}</div>`;
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+  if (data.keyword) titleEl.textContent = t('search_title', data.keyword);
+  countEl.textContent = t('total', data.total);
+  container.innerHTML = data.works.map((w, i) => renderSearchItem(w, i)).join('');
+  renderPagination(data);
+}
+
+function renderSearchItem(w, i) {
+  const n = x => (x && x.name ? x.name : '');
+  const actors = (w.actresses || []).map(n).filter(Boolean).join(' / ');
+  const directors = (w.directors || []).map(n).filter(Boolean).join(' / ');
+  const series = (w.series || []).map(n).filter(Boolean).join(' / ');
+  const labels = (w.label || []).map(n).filter(Boolean);
+  const genres = (w.genres || []).map(n).filter(Boolean);
+  const tags = (w.relatedTags || []).map(n).filter(Boolean);
+  const maker = n(w.maker);
+  const dur = w.duration && w.duration.minutes ? `${w.duration.minutes}${t('sr_min')}` : '';
+  const delivery = fmtJstDate(w.deliveryStartAt || w.deliveryStartDate);
+  const released = fmtJstDate(w.makerReleasedAt);
+
+  const chips = (list, cls) => list.map(x => `<span class="sr-chip${cls ? ' ' + cls : ''}">${escHtml(x)}</span>`).join(' ');
+  const row = (k, v) => (v ? `<div class="sr-row"><span class="sr-label">${t(k)}</span><span class="sr-value">${v}</span></div>` : '');
+  const mchip = (txt, cls, tip) => (txt ? `<span class="sr-mchip${cls ? ' ' + cls : ''}"${tip ? ` title="${escAttr(tip)}"` : ''}>${escHtml(txt)}</span>` : '');
+
+  const distCode = w.id || '';
+  const mkCode = w.makerContentId && w.makerContentId !== w.id ? w.makerContentId : '';
+  const imgs = { images: w.images || [], title: w.title || '', code: mkCode || distCode, date: delivery };
+  const priceTag = (w.price && w.price.price > 0)
+    ? `<span class="sr-price-tag">¥ ${w.price.price.toLocaleString('ja-JP')}</span>` : '';
+  const rating = w.review && w.review.count
+    ? `★ ${w.review.average} ・ ${w.review.count}${t('sr_reviews')}` : '';
+  const meta =
+    mchip(delivery, 'date', t('sr_delivery')) +
+    mchip(released, 'date', t('sr_released')) +
+    mchip(dur, 'dur', t('sr_duration')) +
+    mchip(rating, 'rate', t('sr_review'));
+  const desc = w.description
+    ? `<div class="sr-desc" title="${escAttr(t('sr_expand'))}" onclick="this.classList.toggle('expanded')">${escHtml(w.description)}</div>`
+    : '';
+  const thumbs = (w.sampleImages || []).slice(0, 12).map((s, i) =>
+    `<img src="${s.smallUrl || s.largeUrl || ''}" alt="" loading="lazy"
+      onclick="openSampleModal(${escAttr(JSON.stringify(imgs))}, ${i})"
+      title="${escAttr(t('sr_thumbs_zoom'))}">`
+  ).join('');
+
+  return `
+  <div class="search-result fade-in" style="animation-delay:${i * 30}ms">
+    <div class="sr-cover">
+      <div class="sr-cover-img-wrap">
+        <img class="sr-cover-img" src="${w.cover.medium || w.cover.large || ''}" alt="${escAttr(w.title || '')}" loading="lazy"
+          onclick="handleCardClick(event, this, ${escAttr(JSON.stringify(imgs))})">
+        <div class="sr-cover-badges">
+          ${distCode ? `<span class="sr-badge sr-badge-code" title="${escAttr(t('copy'))}">${escHtml(distCode)}</span>` : ''}
+          ${mkCode ? `<span class="sr-badge sr-badge-maker">${escHtml(mkCode)}</span>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="sr-info">
+      <div class="sr-head">
+        <h3 class="sr-title">${escHtml(w.title || '')}</h3>
+        ${priceTag}
+      </div>
+      ${meta ? `<div class="sr-meta">${meta}</div>` : ''}
+      <div class="sr-table">
+        ${row('sr_actresses', actors)}
+        ${row('sr_directors', directors)}
+        ${row('sr_series', series)}
+        ${row('sr_maker', maker)}
+        ${row('sr_label', chips(labels))}
+        ${row('sr_genres', chips(genres))}
+        ${row('sr_tags', chips(tags))}
+        ${row('sr_dist_code', distCode ? escHtml(distCode) : '')}
+        ${row('sr_maker_code', mkCode ? escHtml(mkCode) : '')}
+      </div>
+      ${desc}
+      ${thumbs ? `<div class="sr-thumbs">${thumbs}</div>` : ''}
+    </div>
+  </div>`;
+}
+
 // ========== State ==========
 let currentMode = 'today';
 let currentDateIdx = 29;
@@ -1785,10 +2124,10 @@ function onCalendarChange() {
 }
 
 // ========== Modal ==========
-function openModal(work) {
+function openModal(work, idx) {
   modalImages = work.images || [];
   if (modalImages.length === 0) return;
-  modalIdx = 0;
+  modalIdx = (typeof idx === 'number' && idx >= 0 && idx < modalImages.length) ? idx : 0;
   document.getElementById('modal').classList.add('open');
   document.body.style.overflow = 'hidden';
   document.getElementById('modal-title').textContent = work.title || '';
@@ -1801,6 +2140,18 @@ function openModal(work) {
   updateActionButtons();
   closePopover();
   updateModal();
+}
+// Open the sample browser (modal) starting at the i-th sample image so the
+// user can walk through all large shots; the modal already carries the
+// 磁力链接 / 跳转播放 action buttons tied to currentCode.
+function openSampleModal(imgs, si) {
+  const gallery = imgs.images || [];
+  let cur = -1;
+  for (let k = 0; k < gallery.length; k++) {
+    if (gallery[k].type === 'sample') cur++;
+    if (cur === si) { openModal(imgs, k); return; }
+  }
+  openModal(imgs, 0);
 }
 function closeModal() {
   document.getElementById('modal').classList.remove('open');
@@ -2248,7 +2599,12 @@ async function loadData(url) {
     let data = await doFetch();
     if (data === null) data = await doFetch();
     if (seq !== loadSeq) return;
-    renderCards(mapResponse(data));
+    const m = mapResponse(data);
+    if (currentMode === 'search') {
+      renderSearchResult(m);
+    } else {
+      renderCards(m);
+    }
   } catch (e) {
     if (e.name === 'AbortError' || seq !== loadSeq) return;
     console.warn('API unavailable, using mock data:', e.message);

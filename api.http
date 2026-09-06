@@ -44,12 +44,15 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/ranking?limit=60&offset=30
 Authorization: Bearer {{token}}
 
-### 2.6 FANZA 番号搜索（始终需 token；路径 id 不区分大小写，上游统一转大写）
-# 走 DMM 官方 affiliate ItemList API：site=FANZA, sort=match, keyword=<大写番号>
+### 2.6 FANZA 番号搜索（始终需 token；路径 id 不区分大小写、忽略连字符）
+# 不依赖 appid：番号直接展开候选数字版 id（maker+补零序号+前缀），经 video.dmm.co.jp
+# GraphQL ContentPageData 探测，首个命中即返回完整详情（description/duration/directors/
+# series/relatedTags/playableDevices/makerReleasedAt/sample2DMovie 等，见 api.md 4.6）
 GET {{host}}/api/search/abp-477
 Authorization: Bearer {{token}}
 
-### 2.6.1 FANZA 番号搜索 - 大写 + 分页（offset 0 基，hits 默认 30）
+### 2.6.1 FANZA 番号搜索 - 大写（分页参数保留兼容）
+# IPX-685 -> 首个候选 ipx00685 命中，返回完整富化详情
 GET {{host}}/api/search/IPX-685?offset=0&hits=30
 Authorization: Bearer {{token}}
 

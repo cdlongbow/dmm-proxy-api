@@ -809,31 +809,29 @@ Authorization: Bearer <token>
 GET /api/search/:id
 ```
 
-按番号搜索 DMM **官方 affiliate ItemList API**（`site=FANZA`、`sort=match`、`keyword` 查询），返回作品列表，供前端「番号搜索」按钮使用。
+按番号搜索 DMM 数字版作品，供前端「番号搜索」按钮使用。**不依赖 affiliate appid / `DMM_API_ID`**——番号直接展开为候选数字版 content id（`maker` + 补零序号，含 `1`/`d_`/`h_` 前缀组合），逐一带 `video.dmm.co.jp` 的 GraphQL `ContentPageData` 探测（见 `lua/api_content.lua`），首个命中即返回**完整详情**，无需第二次富化请求。
 
 **鉴权**：请求**始终需要** `Authorization: Bearer <token>`（与其它 `/api/*` 一致）。
 
-**输入**：`:id` 为番号（如 `abp-477`、`IPX-685`）。**大小写不敏感**——服务端统一转成**大写**后作为 `keyword` 发给 DMM（`/api/search/abp-477` 等价于 `/api/search/ABP-477`）。
+**输入**：`:id` 为番号（如 `abp-477`、`IPX-685`）。**大小写不敏感、忽略连字符与空白**——`/api/search/abp-477` 等价于 `/api/search/ABP-477`。
 
 **参数**
 
 | 参数 | 说明 |
 |------|------|
-| `hits` | 每页条数，默认 30，最大 100 |
-| `offset` | 0 基分页偏移（对外 0 基；上游 DMM 为 1 基，服务端自动 +1） |
-
-**上游配置**：affiliate 凭据来自 `DMM_API_ID` / `DMM_AFFILIATE_ID`（未设置时回退到内置默认值），见 `lua/config.lua`。
+| `offset` | 保留字段，恒为 0（精确番号命中通常只有一部，`hasNext` 恒 `false`） |
 
 **流程**
 
 1. 先查内存缓存（`search_cache`，`lua_shared_dict`，容量由 `DMM_CACHE_TOTAL` 分配、占 5%，键为 `sr:<CODE>:<offset>`），命中直接返回（TTL 6 小时）。
-2. 未命中则请求 ItemList API，`result.status` 为 `200` 且携带 `items` 即成功。
-3. 归一化每个 item：`content_id` → `id`（前端用 `cidToCode` 还原番号）、`imageURL.large` → `cover.large`、`date` → `deliveryStartAt`、`iteminfo.actress/maker` → `actresses/maker`、`review` → `review`；`sampleImageURL` 尽力抽取大图。
+2. 展开番号为候选数字版 id：`<maker>` + `%05d` / `%04d` / `%03d`，并叠加 `1`、`d_`、`h_` 前缀（去重后按优先序探测，通常第 1 个即命中）。
+3. 对每个候选调 `ContentPageData`；命中（`ppvContent` 非空）→ 归一化详情 → 构造 `works[0]`。全部未命中或 GraphQL 失败 → `works` 为空（`200`）。
+4. 详情结果在 `search_cache` 以 `gc:<cid>` 键缓存（TTL 7 小时），同一数字 id 翻页/重复搜索不再请求。
 
 **示例请求**
 
 ```http
-GET http://localhost:8080/api/search/abp-477
+GET http://localhost:8080/api/search/ipx-685
 Authorization: Bearer <token>
 ```
 
@@ -841,38 +839,82 @@ Authorization: Bearer <token>
 
 ```json
 {
-  "keyword": "ABP-477",
-  "total": 2,
-  "hits": 30,
-  "limit": 30,
+  "keyword": "IPX-685",
+  "source": "graphql",
+  "total": 1,
+  "count": 1,
+  "hits": 1,
+  "limit": 1,
   "offset": 0,
   "hasNext": false,
-  "count": 2,
   "works": [
     {
-      "id": "118abp477",
-      "title": "エンドレスセックス AIKA",
-      "cover": { "medium": "https://pics.dmm.co.jp/mono/movie/adult/118abp477/118abp477ps.jpg", "large": "..." },
-      "deliveryStartAt": "2016-05-10 10:00:00",
-      "actresses": [ { "id": 1008887, "name": "AIKA" } ],
-      "maker": { "id": 40136, "name": "プレステージ" },
-      "review": { "average": 4.41, "count": 32 },
-      "url": "https://www.dmm.co.jp/...",
-      "floor": "dvd",
-      "price": { "price": 4180 }
+      "id": "ipx00685",
+      "makerContentId": "IPX-685",
+      "title": "微笑みお姉さんが優しい口調で強●ザーメン強奪 エロギャップ痴女エステ 栗山莉緒",
+      "floor": "AV",
+      "duration": { "seconds": 7440, "minutes": 124 },
+      "description": "...",
+      "cover": { "medium": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/ipx00685/...", "large": "..." },
+      "deliveryStartAt": "2023-04-06T00:00:00Z",
+      "makerReleasedAt": "2023-04-06T00:00:00Z",
+      "actresses": [{ "id": "1126056", "name": "栗山莉緒" }],
+      "directors": [{ "name": "..." }],
+      "maker": { "id": "7808", "name": "アイデアポケット" },
+      "label": [{ "id": "3474", "name": "IDEA POCKET" }],
+      "genres": [{ "id": "...", "name": "ギリモザ" }],
+      "relatedTags": [{ "id": "...", "name": "微笑みお姉さん" }],
+      "review": { "average": 4.12, "count": 17 },
+      "price": { "price": 300, "listPrice": 300, "salePrice": 300 },
+      "playableDevices": [{ "device": "PLAY_DEVICE_PC", "name": "パソコン" }],
+      "sampleImages": [{ "number": 1, "smallUrl": "...", "largeUrl": "..." }],
+      "sample2DMovie": { "hlsMovieUrl": "...", "highestMovieUrl": "..." }
     }
   ]
 }
 ```
 
-> `sort=match` 为模糊匹配：`ZZZ-000` 这类无精确条目的关键词，DMM 会返回部分匹配作品（`total` 为命中总数）。需要精确映射时前端可结合 `match` 排序与 `cidToCode(w.id)` 精确比对。
+> 候选探测基于 DMM 数字版 id 规律（`maker + 5 位补零序号` 最常见）。对不遵守该规律的少量老作品可能找不到（返回空 `works`），此时可换用其它接口定位。
+
+**响应字段**
+
+| 字段 | 说明 |
+|------|------|
+| `keyword` | 规范化番号（大写、去空白） |
+| `source` | 恒为 `graphql` |
+| `total` / `count` | 命中数（0 或 1） |
+| `works[].id` | 数字版 content id（如 `ipx00685`，用作「配信品番」） |
+| `works[].makerContentId` | メーカー品番（如 `SSIS-666`） |
+| `works[].title` | 作品标题 |
+| `works[].description` | 内容简介 |
+| `works[].floor` | 分类（`AV` 等） |
+| `works[].contentType` | 内容类型（`TWO_DIMENSION` / VR 等） |
+| `works[].cover.medium` / `cover.large` | 封面直链 |
+| `works[].duration` | `{ seconds, minutes }` 收録时长 |
+| `works[].deliveryStartAt` / `deliveryStartDate` | 配信開始日（ISO 8601） |
+| `works[].makerReleasedAt` | 商品発売日（ISO 8601，JST +9h） |
+| `works[].saleEndAt` | 促销截止时间（可空） |
+| `works[].wishlistCount` | 收藏/加入愿望单数量 |
+| `works[].actresses` | 出演者列表（含 `nameRuby` / 三围 / `contentCount` 等） |
+| `works[].directors` | 監督列表 `[{id, name}]` |
+| `works[].series` | 系列列表 `[{id, name}]` |
+| `works[].maker` | メーカー `{id, name}` |
+| `works[].label` | レーベル列表（数组） |
+| `works[].genres` | ジャンル列表 `[{id, name}]` |
+| `works[].relatedTags` | 相关标签列表（拍平去重） |
+| `works[].playableDevices` | 対応デバイス列表 `[{name, device}]` |
+| `works[].review` | 平均評価 `{average, count}` |
+| `works[].price` | 价格 `{price, listPrice, salePrice}` |
+| `works[].sampleImages` | 剧照列表 `[{number, smallUrl, largeUrl}]` |
+| `works[].sample2DMovie` | 2D 预告片 `{hlsMovieUrl, highestMovieUrl}` |
+| `works[].sampleVRMovie` | VR 预告片链接（VR 作品才有） |
 
 **错误码**
 
 | 状态 | 场景 |
 |------|------|
 | `400` | 缺少番号 |
-| `502` | DMM 上游失败（HTTP 非 200 或 `result.status` 非成功），返回 `upstream_error` |
+| `200`（`works` 为空） | 未探测到候选数字版 id（含 GraphQL 失败，见日志） |
 | `401`/`403` | 未带 / 无效 token |
 
 ---
@@ -950,7 +992,7 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 
 - **今日更新**：7 天时间线选择器 + 卡片网格浏览
 - **热门排行**：销量排名展示，含排名序号与收藏数
-- **番号搜索**：输入番号（如 `ABP-477`）一键搜索，走 DMM 官方 FANZA affiliate API，支持分页
+- **番号搜索**：输入番号（如 `ABP-477`）一键搜索，走 GraphQL 数字版直接探测（无 appid），结果以信息化布局展示完整详情
 - **图片预览**：点击卡片封面弹出大图弹窗，封面 + 剧照轮播，键盘 `←` `→` / `Esc` 导航；点击**番号**自动复制到剪贴板（含弹窗内番号，带"已复制"提示）
 - **磁力面板**：三个来源（SUKEBEI / JAVDB / JAVBUS）Tab 展示磁力列表，磁力点击复制；**某个来源失败时该 Tab 内显示「重新获取」按钮**（`?s=<来源>` 定向重拉）；三个来源全为空的番号显示"当前番号暂无磁力链接"+「重新获取」按钮（全量重拉）
 - **播放平台**：点「跳转播放」并发探测 missav / supjav / jable / 123av 是否可播，可跳转的显示按钮、探测失败的标注"探测失败"

@@ -15,7 +15,7 @@
 - **播放平台探测**：`/api/findplay/:id` 并发探测 missav / supjav / jable / 123av 四个在线播放平台哪个能播放该番号，返回可跳转搜索链接与 `playable` 标识；命中缓存，未命中 1 小时（`lua_shared_dict findplay_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 2%）
 - **每日更新列表**：`/api/todayupdate` 通过 DMM FANZA GraphQL API 获取每日更新的作品列表，支持按日期查询、分页
 - **热门排行榜**：`/api/ranking` 按销售排名分数返回热门作品，支持分页
-- **番号搜索**：`/api/search/:id` 通过 DMM 官方 **FANZA affiliate ItemList API**（`sort=match`、`keyword`）按番号搜索，大小写不敏感（上游统一大写）；affiliate 凭据可经 `DMM_API_ID` / `DMM_AFFILIATE_ID` 覆盖；结果缓存 6 小时（`search_cache`，占 `DMM_CACHE_TOTAL` 的 5%）
+- **番号搜索**：`/api/search/:id` 将番号直接展开为候选数字版 content id（`maker` + 补零序号 + 常见前缀）并经 video.dmm.co.jp 的 GraphQL `ContentPageData` 探测，**无需 affiliate appid**，命中即返回完整详情；大小写不敏感、忽略连字符；结果缓存 6 小时（`search_cache`，占 `DMM_CACHE_TOTAL` 的 5%）
 - **会话令牌（Session Token）**：`/api/session` 签发**短时效、绑定客户端 IP** 的 token 给前端使用，主 token（`DMM_AUTH_TOKEN`）永不下发浏览器；`/api/*` 同时接受主 token 或 session token（`Authorization: Bearer`）
 - **结果缓存**：todayupdate / ranking / film_sample 缓存 8 小时、search / magnet 6 小时、findplay（命中 6h / 未命中 1h）、trailer_direct 7 天；缓存内存总预算由 `DMM_CACHE_TOTAL` 按固定比例自动分配（findplay 2% / ranking 5% / search 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 其余 58%）
 - **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览、**番号搜索**，卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航；点击番号一键复制；磁力面板三源 Tab + 失败来源「重新获取」、全部无数据「重新获取」；播放平台一键跳转
@@ -89,7 +89,7 @@ dmm-proxy-api/
 │   ├── api_findplay.lua     # /api/findplay 实现（播放平台探测，多平台并发 + 缓存）
 │   ├── api_todayupdate.lua # /api/todayupdate 实现（每日更新列表）
 │   ├── api_ranking.lua     # /api/ranking 实现（热门排行榜）
-│   ├── api_search.lua      # /api/search 实现（FANZA affiliate 番号搜索，关键字大写 + 缓存）
+│   ├── api_search.lua      # /api/search 实现（番号→候选 id 探测 GraphQL，无需 appid，缓存）
 │   └── api_session.lua     # /api/session 实现（前端短时效 session token）
 ├── static/                 # 前端静态文件（docker volume 挂载，改后刷新即可）
 │   └── index.html          # SPA 单页应用（今日更新 / 排行榜 / 主题切换 / 多语言）
@@ -125,8 +125,8 @@ cp .env.example .env
 | `DMM_ALLOW_IPS` | 空 | on 时可选的 IP 白名单，逗号分隔 IP 与 CIDR（如 `1.2.3.4,203.0.113.0/24`），空=放行全部 |
 | `DMM_FRONTEND_TTL` | `900` | `/api/session` 签发的 session token 有效秒数（默认 15 分钟；绑定客户端 IP，过期或换 IP 即 403） |
 | `DMM_CACHE_TOTAL` | `250` | 全部查询结果缓存的共享内存总预算（MB），启动时按固定比例分配（findplay 2% / ranking 5% / search 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 58%）；非法值或 <30 回退 250 |
-| `DMM_API_ID` | 内置默认 | `/api/search` 用的 DMM FANZA affiliate WebAPI ID（空则用内置默认） |
-| `DMM_AFFILIATE_ID` | 内置默认 | `/api/search` 用的 affiliate ID（格式 `媒体ID-站点ID`，空则用内置默认） |
+| `DMM_API_ID` | 内置默认 | （已停用）旧 `/api/search` 用的 DMM FANZA affiliate WebAPI ID，保留兼容 |
+| `DMM_AFFILIATE_ID` | 内置默认 | （已停用）旧 affiliate ID（格式 `媒体ID-站点ID`），保留兼容 |
 | `DMM_PROXY_PORT` | `80` | 宿主机对外 HTTP 端口 |
 | `DMM_PROXY_SSL_PORT` | `443` | 宿主机对外 HTTPS 端口 |
 | `DMM_CERT_DIR` | `/etc/ssl/dmm` | 容器内证书目录 |
@@ -449,7 +449,7 @@ GET /api/search/:id
 Authorization: Bearer <token>
 ```
 
-通过 DMM 官方 **affiliate ItemList API**（`site=FANZA`、`sort=match`、`keyword`）按番号搜索。路径 id **大小写不敏感**，服务端统一**转大写**后发给上游（`/api/search/abp-477` 与 `/api/search/ABP-477` 等价）。支持 `offset`（0 基）/ `hits`（默认 30，最大 100）分页；结果按 `(关键字, 偏移)` 缓存 **6 小时**（`lua_shared_dict search_cache`，占 `DMM_CACHE_TOTAL` 的 5%）。affiliate 凭据经 `DMM_API_ID` / `DMM_AFFILIATE_ID` 覆盖（默认内置）。
+通过番号直接检索 DMM 数字版作品，**不依赖 affiliate appid**：番号（大小写不敏感、忽略连字符）展开为候选数字版 content id（`<maker>` + 补零序号，含 `1`/`d_`/`h_` 前缀），逐个用 video.dmm.co.jp 的 GraphQL `ContentPageData` 探测（`lua/api_content.lua`），首个命中即返回**完整详情**（简介 / 时长 / 監督 / 类型 / 剧照 / 预告 / 价格等，见 api.md §4.6）。结果按番号缓存 **6 小时**（`lua_shared_dict search_cache`，占 `DMM_CACHE_TOTAL` 的 5%），详情再以 `gc:<cid>` 缓存 7 小时。
 
 ```http
 # 小写番号也能搜（上游统一大写）
@@ -462,30 +462,29 @@ Authorization: Bearer <token>
 ```json
 {
   "keyword": "ABP-477",
-  "total": 2,
-  "hits": 30,
-  "limit": 30,
+  "source": "graphql",
+  "total": 1,
+  "count": 1,
+  "hits": 1,
+  "limit": 1,
   "offset": 0,
   "hasNext": false,
-  "count": 2,
   "works": [
     {
-      "id": "118abp477",
-      "title": "エンドレスセックス AIKA",
-      "cover": { "medium": "...", "large": "..." },
-      "deliveryStartAt": "2016-05-10 10:00:00",
-      "actresses": [{ "id": 1008887, "name": "AIKA" }],
-      "maker": { "id": 40136, "name": "プレステージ" },
-      "review": { "average": 4.41, "count": 32 },
-      "price": { "price": 4180 },
-      "url": "https://www.dmm.co.jp/...",
-      "floor": "dvd"
+      "id": "ipx00685",
+      "makerContentId": "IPX-685",
+      "title": "...",
+      "duration": { "seconds": 7440, "minutes": 124 },
+      "review": { "average": 4.12, "count": 17 },
+      "price": { "price": 300, "listPrice": 300, "salePrice": 300 },
+      "deliveryStartAt": "2023-04-06T00:00:00Z",
+      "makerReleasedAt": "2023-04-06T00:00:00Z"
     }
   ]
 }
 ```
 
-`sort=match` 为模糊匹配：无精确条目的关键词会返回部分匹配作品（`total` 为命中总数）。
+未找到候选数字版 id（含老作品 / GraphQL 失败）时返回 `200` 且 `works` 为空数组。
 
 ### 磁力链接聚合
 

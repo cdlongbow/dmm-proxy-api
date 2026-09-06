@@ -43,13 +43,23 @@ _M.WEB = {
     referer = "https://www.dmm.co.jp/",
 }
 
--- DMM FANZA affiliate API credentials used by /api/search/:id (番号 search).
--- Overridable via DMM_API_ID / DMM_AFFILIATE_ID so they don't have to live in
--- the repo; the values below are the common FANZA affiliate defaults.
+-- LEGACY: DMM FANZA affiliate ItemList credentials. /api/search/:id no longer
+-- uses the affiliate API (it probes video.dmm.co.jp GraphQL directly, see
+-- lua/api_content.lua:get_by_code), so this block and the DMM_API_ID /
+-- DMM_AFFILIATE_ID env vars are kept only for reference and unused code.
 _M.AFFILIATE = {
     endpoint = "https://api.dmm.com/affiliate/v3/ItemList",
     api_id = os.getenv("DMM_API_ID") or "UrwskPfkqQ0DuVry2gYL",
     affiliate_id = os.getenv("DMM_AFFILIATE_ID") or "10278-996",
+}
+
+-- video.dmm.co.jp GraphQL content detail (see lua/api_content.lua).
+-- Guest-token auth is NOT required for read-only lookups (it only gates basket
+-- state we never query), so an empty string works; keep the env override so a
+-- real token can be supplied if DMM ever hardens the endpoint.
+_M.VIDEO_GQL = {
+    endpoint = "https://api.video.dmm.co.jp/graphql",
+    guest_token = os.getenv("DMM_GUEST_TOKEN") or "",
 }
 
 -- CID conversion: user input "ABP-477" -> try multiple DMM CID variants.
