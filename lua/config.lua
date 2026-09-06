@@ -15,6 +15,12 @@ end
 -- Short-lived signed proxy URL window, in seconds.
 _M.SIGN_TTL = tonumber(os.getenv("DMM_SIGN_TTL") or "220") or 220
 
+-- Lifetime of the frontend session token issued by /api/session, in seconds.
+-- The browser NEVER receives DMM_AUTH_TOKEN; it only gets this short-lived,
+-- client-IP-bound token for /api/* calls, so F12/DevTools inspection cannot
+-- leak the master secret. Default 900 (15 min).
+_M.FRONTEND_TTL = tonumber(os.getenv("DMM_FRONTEND_TTL") or "900") or 900
+
 -- Per-IP request budget per minute when protection is enabled.
 _M.RATE_PER_MIN = tonumber(os.getenv("DMM_RATE_PER_MIN") or "240") or 240
 

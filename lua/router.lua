@@ -1,7 +1,20 @@
 local cjson = require "cjson"
 local config = require "config"
+local sign = require "sign"
 
 local _M = {}
+
+-- Accept the master DMM_AUTH_TOKEN OR a valid short-lived frontend session
+-- token (minted by /api/session, bound to the client IP and TTL-limited).
+local function is_valid_token(token)
+    if not token or token == "" then
+        return false
+    end
+    if token == config.AUTH_TOKEN then
+        return true
+    end
+    return sign.verify_frontend(token)
+end
 
 function _M.check_auth()
     local auth_header = ngx.req.get_headers()["Authorization"]
@@ -16,7 +29,7 @@ function _M.check_auth()
     end
 
     local token = auth_header:match("^Bearer%s+(.+)$")
-    if not token or token ~= config.AUTH_TOKEN then
+    if not token or not is_valid_token(token) then
         ngx.status = 403
         ngx.header["Content-Type"] = "application/json; charset=utf-8"
         ngx.say(cjson.encode({

@@ -1186,8 +1186,22 @@
   </div>
 </div>
 
-<script src="/config.js"></script>
 <script>
+// ========== Frontend session token ==========
+// The browser never holds the master DMM_AUTH_TOKEN. /api/session issues a
+// short-lived (FRONTEND_TTL), client-IP-bound token; we refresh it lazily.
+let __API_TOKEN__ = '';
+let __TOKEN_EXP__ = 0;
+
+async function refreshSession(force) {
+  if (!force && __API_TOKEN__ && (__TOKEN_EXP__ - Date.now() / 1000) > 30) return;
+  const r = await fetch('/api/session', { cache: 'no-store', headers: { 'Accept': 'application/json' } });
+  if (!r.ok) throw new Error('session ' + r.status);
+  const d = await r.json();
+  __API_TOKEN__ = d.token || '';
+  __TOKEN_EXP__ = d.exp || 0;
+}
+
 // ========== i18n ==========
 const I18N = {
   zh: {
@@ -1352,11 +1366,14 @@ function toggleBrowseMode() {
   resetGachaCards();
 }
 
-function handleCardClick(card, payload) {
+function handleCardClick(e, card, payload) {
   if (currentBrowse === 'gacha' && !card.classList.contains('revealed')) {
     card.classList.add('revealed');
     return;
   }
+  // Only the cover image opens the sample browser; clicking the title,
+  // meta or elsewhere on the card does nothing.
+  if (!e.target.closest('.card-img')) return;
   openModal(payload);
 }
 
@@ -1704,13 +1721,15 @@ function setBusy(btnId, busy) {
   btn.disabled = busy;
 }
 
-function actionFetch(url) {
-  return fetch(url, {
-    headers: { 'Authorization': 'Bearer ' + (window.__API_TOKEN__ || '') },
-  }).then(res => {
-    if (!res.ok) throw new Error('API ' + res.status);
-    return res.json();
-  });
+async function actionFetch(url) {
+  await refreshSession();
+  let res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + __API_TOKEN__ } });
+  if (res.status === 401 || res.status === 403) {
+    await refreshSession(true);
+    res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + __API_TOKEN__ } });
+  }
+  if (!res.ok) throw new Error('API ' + res.status);
+  return res.json();
 }
 
 async function loadMagnets() {
@@ -1896,7 +1915,7 @@ function renderCards(data) {
     const dateHtml = w.deliveryStartAt ? `<span class="card-date">${escHtml(fmtRelease(w.deliveryStartAt))}</span>` : '';
     return `
       <div class="card fade-in" style="animation-delay:${i*30}ms"
-        onclick="handleCardClick(this, ${escAttr(JSON.stringify({images:w.images||[],title:w.title,code,date:fmtRelease(w.deliveryStartAt)}))})">
+        onclick="handleCardClick(event, this, ${escAttr(JSON.stringify({images:w.images||[],title:w.title,code,date:fmtRelease(w.deliveryStartAt)}))})">
         <img class="card-img" src="${w.cover.medium || w.cover.large || ''}" alt="${escAttr(w.title || '')}" loading="lazy"
           onerror="this.style.background='linear-gradient(135deg,var(--border),var(--border))'">
         <div class="card-body">
@@ -1970,31 +1989,39 @@ function nextPage() { currentPage++; loadCurrentData(); }
 let loadSeq = 0;
 let abortCtrl = null;
 
-function loadData(url) {
+async function loadData(url) {
   const seq = ++loadSeq;
   if (abortCtrl) abortCtrl.abort();
   abortCtrl = new AbortController();
   const container = document.getElementById('cards');
   container.innerHTML = `<div class="status-msg">${t('loading')}</div>`;
-  return fetch(url, {
-    headers: { 'Authorization': 'Bearer ' + (window.__API_TOKEN__ || '') },
-    signal: abortCtrl.signal,
-  })
-    .then(res => {
-      if (!res.ok) throw new Error('API ' + res.status);
-      return res.json();
-    })
-    .then(data => {
-      if (seq !== loadSeq) return;
-      renderCards(mapResponse(data));
-    })
-    .catch(e => {
-      if (e.name === 'AbortError' || seq !== loadSeq) return;
-      console.warn('API unavailable, using mock data:', e.message);
-      renderCards(currentMode === 'today'
-        ? mockTodayData(DATES[currentDateIdx], currentPage * PAGE_SIZE, PAGE_SIZE)
-        : mockRankingData(currentPage * PAGE_SIZE, PAGE_SIZE));
+
+  const doFetch = async () => {
+    await refreshSession();
+    const res = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + __API_TOKEN__ },
+      signal: abortCtrl.signal,
     });
+    if (res.status === 401 || res.status === 403) {
+      await refreshSession(true);
+      return null;
+    }
+    if (!res.ok) throw new Error('API ' + res.status);
+    return res.json();
+  };
+
+  try {
+    let data = await doFetch();
+    if (data === null) data = await doFetch();
+    if (seq !== loadSeq) return;
+    renderCards(mapResponse(data));
+  } catch (e) {
+    if (e.name === 'AbortError' || seq !== loadSeq) return;
+    console.warn('API unavailable, using mock data:', e.message);
+    renderCards(currentMode === 'today'
+      ? mockTodayData(DATES[currentDateIdx], currentPage * PAGE_SIZE, PAGE_SIZE)
+      : mockRankingData(currentPage * PAGE_SIZE, PAGE_SIZE));
+  }
 }
 
 async function loadTodayData() {
