@@ -58,10 +58,16 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/search/IPX-685?offset=0&hits=30
 Authorization: Bearer {{token}}
 
-### 2.6.2 FANZA 番号搜索 - javbus 兜底（DMM 无数字版时）
-# ABF-364 -> GraphQL 未命中，自动走 javbus JSON API（https://javbus-api.131433.xyz/api/movies/
-# ABF-364），source="javbus"，director 缺失显示"未知"，样图为外部 CDN，附 webUrl
-GET {{host}}/api/search/ABF-364
+### 2.6.2 FANZA 番号搜索 - javbus 兜底（DMM 无数字版时，非 MGS 前缀）
+# REBD-1061 -> GraphQL 未命中，自动走 javbus JSON API（https://javbus-api.131433.xyz/api/movies/
+# REBD-1061），source="javbus"，director 缺失显示"未知"，样图为外部 CDN，附 webUrl
+GET {{host}}/api/search/REBD-1061
+Authorization: Bearer {{token}}
+
+### 2.6.3 FANZA 番号搜索 - MGS 番号（ABF/SIRO/MAAN 等前缀，直接走 mgstage.com）
+# ABF-365 -> 命中 MGS 前缀（"ABF"+数字），跳过 DMM/javbus，抓取
+# https://www.mgstage.com/product/product_detail/ABF-365/（Cookie: adc=1），source="mgs"
+GET {{host}}/api/search/ABF-365
 Authorization: Bearer {{token}}
 
 ### 3. 预告片信息（始终需 token；返回的 proxy 在 on 时为签名 URL）

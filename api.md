@@ -576,7 +576,7 @@ Authorization: Bearer <token>
 GET /api/magnet/:id
 ```
 
-按番号从三个独立站点聚合磁力链接：**sukebei**（sukebei.nyaa.si）、**javdb**（javdb.com）、**javbus**（javbus.com）。结果按来源分组，客户端可据此区分收藏/排序。
+按番号从三个独立站点聚合磁力链接：**sukebei**（sukebei.nyaa.si）、**javdb**（javdb.com 官方 App JSON API，优先）、**javbus**（javbus.com）。结果按来源分组，客户端可据此区分收藏/排序。
 
 
 **鉴权**：请求**始终需要** `Authorization: Bearer <token>`（与其它 `/api/*` 一致）。
@@ -594,7 +594,7 @@ GET /api/magnet/:id
 1. 先查内存缓存（`magnet_cache`，`lua_shared_dict`，键为 `mg:<source>:<code>`），命中直接返回。
 2. 未命中则**并发请求**三个来源（`ngx.thread`，单路超时 8 秒）。
    - **sukebei**：RSS 搜索页，RSS 只带 infoHash，磁力链接由 infoHash + nyaa 官方 tracker 列表重建。
-   - **javdb**：搜索页定位精确匹配番号的视频 → 详情页解析磁力表格（无需登录即可拿到全部磁力）。
+   - **javdb**：**官方 App JSON API**（`https://jdforrepam.com`，App 专用后端，无 Cloudflare 地区门控、无需登录）：请求带 `jdsignature` 签名头（`<ts>.lpw6vgqzsp.<md5(ts+STR1)>`，`STR1` 为固定常量）与固定 query 参数（`platform=android` 等），先用 `GET /api/v2/search?q=<番号>&limit=10` 定位精确匹配的视频（取 `movie.magnets_count > 0` 的 `id`，如多个精确匹配取磁力数最多者），再 `GET /api/v1/movies/{id}/magnets` 取磁力列表（`cnsub`/`hd` 映射为 `tags`，`size` 字节数、`files_count`、`created_at`）。App API 搜索未命中或请求失败时**回落 javdb.com 网页抓取**（搜索页 → 详情页磁力表格）。
    - **javbus**：搜索页（自带 `existmag=mag` Cookie 开启磁力 → 详情页取 `gid/uc` → ajax 磁力表格）。遇到间歇性年龄验证页会自动重试一次。
 3. 任一来源查询失败不影响其它来源：该来源返回 `count: 0` 并附 `error` 说明。
 
@@ -651,13 +651,15 @@ Authorization: Bearer <token>
       "count": 14,
       "magnets": [
         {
-          "name": "SSNI-730 無修正...",
-          "magnet": "magnet:?xt=urn:btih:...",
+          "name": "SSNI-730 無修正 中文字幕",
+          "magnet": "magnet:?xt=urn:btih:5c6d...&dn=SSNI-730...",
           "info_hash": "5c6d...",
           "size": "3.5 GB",
+          "size_bytes": 3758096384,
           "date": "2025-11-11",
-          "tags": ["高清", "字幕"],
-          "url": "https://javdb.com/v/WrBQ7"
+          "date_str": "2025-11-11",
+          "files": 4,
+          "tags": ["中字", "高清"]
         }
       ]
     },
@@ -693,11 +695,14 @@ Authorization: Bearer <token>
 | `sources[].magnets[].name` | 种子标题 |
 | `sources[].magnets[].size` | 文件大小（字符串，原始文本，如 `1.9 GiB`） |
 | `sources[].magnets[].date` | sukebei 为 pubDate 的 epoch 秒；javdb/javbus 为上传日期字符串 |
-| `sources[].magnets[].url` | 来源详情页 URL |
+| `sources[].magnets[].date_str` | 仅 javdb（App API 路径）：与 `date` 相同，格式化为日期字符串 |
+| `sources[].magnets[].files` | 仅 javdb（App API 路径）：文件数 |
+| `sources[].magnets[].size_bytes` | 仅 javdb（App API 路径）：字节数（整数） |
+| `sources[].magnets[].url` | 来源详情页 URL（javdb 仅网页兜底路径有） |
 | `sources[].magnets[].seeders/leechers/downloads` | 仅 sukebei：做种/下载/完成数 |
 | `sources[].magnets[].category` | 仅 sukebei：分类 |
 | `sources[].magnets[].torrent_url` | 仅 sukebei：`.torrent` 文件直链 |
-| `sources[].magnets[].tags` | 仅 javdb：如 `["高清","字幕"]` |
+| `sources[].magnets[].tags` | 仅 javdb：App API 路径由 `cnsub`/`hd` 映射为 `["中字","高清"]`；网页兜底路径为页面原始标签（如 `["字幕"]`） |
 
 **错误码**
 
@@ -809,7 +814,7 @@ Authorization: Bearer <token>
 GET /api/search/:id
 ```
 
-按番号搜索 DMM 数字版作品，供前端「番号搜索」按钮使用。**不依赖 affiliate appid / `DMM_API_ID`**——番号直接展开为候选数字版 content id（`maker` + 补零序号，含 `1`/`d_`/`h_` 前缀组合），逐一带 `video.dmm.co.jp` 的 GraphQL `ContentPageData` 探测（见 `lua/api_content.lua`），首个命中即返回**完整详情**，无需第二次富化请求。
+按番号搜索 DMM 数字版作品，供前端「番号搜索」按钮使用。**不依赖 affiliate appid / `DMM_API_ID`**——番号直接展开为候选数字版 content id（`maker` + 补零序号，含 `1`/`d_`/`h_` 前缀组合），逐一带 `video.dmm.co.jp` 的 GraphQL `ContentPageData` 探测（见 `lua/api_content.lua`），首个命中即返回**完整详情**，无需第二次富化请求。**MGS 番号不依赖 DMM**：命中 MGS 前缀的番号（如 `ABF-365`）直接走 mgstage.com 详情页抓取（`source="mgs"`），见下方流程第 2 步。
 
 **鉴权**：请求**始终需要** `Authorization: Bearer <token>`（与其它 `/api/*` 一致）。
 
@@ -824,12 +829,13 @@ GET /api/search/:id
 **流程**
 
 1. 先查内存缓存（`search_cache`，`lua_shared_dict`，容量由 `DMM_CACHE_TOTAL` 分配、占 5%，键为 `sr:<CODE>:<offset>`），命中直接返回（TTL 6 小时）。
-2. 展开番号为候选数字版 id：`<maker>` + `%05d` / `%04d` / `%03d`，并叠加 `1`、`d_`、`h_` 前缀（去重后按优先序探测，通常第 1 个即命中）。仅纯 `<字母><数字>` 形态的候选会被再次补零展开——带 `d_` / `h_` 前缀的候选按原样探测，避免把 `d_smgn00124` 错拆成无关的 `d0124` 造成误命中。
-3. 对每个候选调 `ContentPageData`（`isAv=true`）；命中后**校验一致性**：返回的 `id` 必须等于发出去的候选 cid，且 `makerContentId` 的 maker 与序号必须匹配请求番号（容忍 `1` / `d_` / `h_` 前缀）。校验失败的候选视为查询错误（如 `d0124`=HANY-D—029 原初是 `SMGN-124` 的错误命中），跳过。
-4. **素人（amateur）分支**：a) 若某个 AV 候选命中但 `floor=AMATEUR`，改以 `isAmateur=true`（`isAv=false`）在素人命名空间重查同一 cid，以补齐 `amateurActress` 等素人专属字段；b) 若整个 AV 候选全部未命中 / 全部失配，则以去掉连字符的原始番号（如 `SMGN-124` → id `smgn124`）在素人命名空间直查。素人命中的 `floor="AMATEUR"`，`cover` 图源为 `pics_dig/digital/amateur/<id>/`。
-5. **javbus 兜底（`source="javbus"`）**：查询 javbus 第三方 JSON API（`https://javbus-api.131433.xyz/api/movies/<番号>`，社区维护的 javbus 数据接口，返回结构化 JSON 而非 HTML），命中后解析为与前端兼容的 work 对象（旧实现直接抓 javbus.com HTML，因反爬 + 地区门控，且 javbus 自身 `/pics/` 图片会被浏览器 CORS 拦截而弃用）。javbus 来源的字段形如：`id`（=番号）、`title`、`director`（缺失 → `"未知"`）、`maker`（製作商）、`label`（發行商，数组）、`series`（系列，数组）、`genres` / `actresses`（纯字符串数组）、`sampleImages`（`smallUrl`/`largeUrl` 均取外部 CDN，如 mgstage，避免 CORS）、`cover`（javbus 图源）、`webUrl`（javbus 详情页原链）；无 `description` / `price` / `review` / `directors` 数组等 DMM 专属字段。前端按 `source` 区分渲染。
-6. 两者皆无结果 → `works` 为空（`200`）。
-7. 详情结果在 `search_cache` 以 `gc:<cid>`（AV）或 `gc:a:<cid>`（素人）键缓存（TTL 7 小时），同一数字 id 翻页/重复搜索不再请求。
+2. **MGS 分支（`source="mgs"`）**：番号统一大写 + 去空白后，若以 MGS 前缀开头（官方系统码如 `200GANA` / `300MIUM`，字母码如 `ABF` / `SIRO` / `MAAN`，**前缀后紧跟数字**才算命中，避免 `GALS-001` 因 `GAL`+`S` 而误判；完整前缀表见 `lua/api_mgs.lua`）→ **跳过 DMM 与 javbus**，直接抓 `www.mgstage.com/product/product_detail/<前缀>-<序号>/`（`Cookie: adc=1` 年龄门；DMM 不收录这些作品）。DNS 抖动会重试 3 次。
+3. 非 MGS 番号展开为候选数字版 id：`<maker>` + `%05d` / `%04d` / `%03d`，并叠加 `1`、`d_`、`h_` 前缀（去重后按优先序探测，通常第 1 个即命中）。仅纯 `<字母><数字>` 形态的候选会被再次补零展开——带 `d_` / `h_` 前缀的候选按原样探测，避免把 `d_smgn00124` 错拆成无关的 `d0124` 造成误命中。
+4. 对每个候选调 `ContentPageData`（`isAv=true`）；命中后**校验一致性**：返回的 `id` 必须等于发出去的候选 cid，且 `makerContentId` 的 maker 与序号必须匹配请求番号（容忍 `1` / `d_` / `h_` 前缀）。校验失败的候选视为查询错误（如 `d0124`=HANY-D—029 原初是 `SMGN-124` 的错误命中），跳过。
+5. **素人（amateur）分支**：a) 若某个 AV 候选命中但 `floor=AMATEUR`，改以 `isAmateur=true`（`isAv=false`）在素人命名空间重查同一 cid，以补齐 `amateurActress` 等素人专属字段；b) 若整个 AV 候选全部未命中 / 全部失配，则以去掉连字符的原始番号（如 `SMGN-124` → id `smgn124`）在素人命名空间直查。素人命中的 `floor="AMATEUR"`，`cover` 图源为 `pics_dig/digital/amateur/<id>/`。
+6. **javbus 兜底（`source="javbus"`）**：查询 javbus 第三方 JSON API（`https://javbus-api.131433.xyz/api/movies/<番号>`，社区维护的 javbus 数据接口，返回结构化 JSON 而非 HTML），命中后解析为与前端兼容的 work 对象（旧实现直接抓 javbus.com HTML，因反爬 + 地区门控，且 javbus 自身 `/pics/` 图片会被浏览器 CORS 拦截而弃用）。javbus 来源的字段形如：`id`（=番号）、`title`、`director`（缺失 → `"未知"`）、`maker`（製作商）、`label`（發行商，数组）、`series`（系列，数组）、`genres` / `actresses`（纯字符串数组）、`sampleImages`（`smallUrl`/`largeUrl` 均取外部 CDN，如 mgstage，避免 CORS）、`cover`（javbus 图源）、`webUrl`（javbus 详情页原链）；无 `description` / `price` / `review` / `directors` 数组等 DMM 专属字段。前端按 `source` 区分渲染。
+7. 两者皆无结果 → `works` 为空（`200`）。
+8. 详情结果在 `search_cache` 以 `gc:<cid>`（AV）或 `gc:a:<cid>`（素人）键缓存（TTL 7 小时），同一数字 id 翻页/重复搜索不再请求。
 
 **示例请求**
 
@@ -883,8 +889,43 @@ Authorization: Bearer <token>
 
 ```json
 {
-  "keyword": "ABF-365",
+  "keyword": "REBD-1061",
   "source": "javbus",
+  "total": 1,
+  "count": 1,
+  "hits": 1,
+  "limit": 1,
+  "offset": 0,
+  "hasNext": false,
+  "works": [
+    {
+      "id": "REBD-1061",
+      "makerContentId": "REBD-1061",
+      "title": "REBD-1061 Sora 空色のファーストノート・小松空",
+      "floor": "javbus",
+      "duration": { "seconds": 4800, "minutes": 80 },
+      "cover": { "medium": "https://www.javbus.com/pics/cover/chz4_b.jpg", "large": "https://www.javbus.com/pics/cover/chz4_b.jpg" },
+      "deliveryStartDate": "2026-08-27",
+      "makerReleasedAt": "2026-08-27",
+      "director": "沢村力",
+      "series": ["Sora（小松空）"],
+      "maker": "REbecca",
+      "label": ["REbecca"],
+      "genres": ["高", "紹介影片", "性感的", "高畫質", "巨乳", "單體作品"],
+      "actresses": ["小松空"],
+      "sampleImages": [{ "number": 1, "smallUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/h_346rebd01061/h_346rebd01061jp-1.jpg", "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/h_346rebd01061/h_346rebd01061jp-1.jpg" }],
+      "webUrl": "https://www.javbus.com/REBD-1061"
+    }
+  ]
+}
+```
+
+**MGS 示例响应 `200`（`source="mgs"`，番号命中 MGS 前缀时走 mgstage.com）**
+
+```json
+{
+  "keyword": "ABF-365",
+  "source": "mgs",
   "total": 1,
   "count": 1,
   "hits": 1,
@@ -895,20 +936,25 @@ Authorization: Bearer <token>
     {
       "id": "ABF-365",
       "makerContentId": "ABF-365",
-      "title": "ABF-365 リミットブレイクSEX 絶対的美少女の殻をブチ破るドM覚醒性交 VOL.13 釈アリス",
-      "floor": "javbus",
+      "title": "リミットブレイクSEX 絶対的美少女の殻をブチ破るドM覚醒性交 VOL.13 釈アリス",
+      "floor": "mgs",
       "duration": { "seconds": 8100, "minutes": 135 },
-      "cover": { "medium": "https://www.javbus.com/pics/cover/cct5_b.jpg", "large": "https://www.javbus.com/pics/cover/cct5_b.jpg" },
-      "deliveryStartDate": "2026-07-17",
-      "makerReleasedAt": "2026-07-17",
+      "cover": { "medium": "https://image.mgstage.com/images/prestige/abf/365/pb_e_abf-365.jpg", "large": "https://image.mgstage.com/images/prestige/abf/365/pb_e_abf-365.jpg" },
+      "deliveryStartDate": "2026/07/02",
+      "makerReleasedAt": "2026/07/17",
+      "salesDate": "2026/07/17",
+      "description": "プレステージ専属女優『釈 アリス』が拘束×玩具責めで気が狂う程のイキ地獄を味わう。…",
       "director": "未知",
       "series": ["リミットブレイクSEX"],
       "maker": "プレステージ",
-      "label": ["ABSOLUTELYFANTASIA"],
-      "genres": ["無毛", "顏射", "單體作品", "フルハイビジョン(FHD)", "オモチャ"],
+      "label": ["ABSOLUTELY FANTASIA"],
+      "genres": ["フルハイビジョン(FHD)", "単体作品", "長身", "パイパン", "オモチャ", "顔射"],
       "actresses": ["釈アリス"],
+      "review": { "average": 4.4, "count": 16, "price": 2430 },
+      "mgs": { "average": 4.4, "count": 16, "price": 2430 },
+      "price": { "price": 2430, "listPrice": 2430, "salePrice": 2430 },
       "sampleImages": [{ "number": 1, "smallUrl": "https://image.mgstage.com/images/prestige/abf/365/cap_e_0_abf-365.jpg", "largeUrl": "https://image.mgstage.com/images/prestige/abf/365/cap_e_0_abf-365.jpg" }],
-      "webUrl": "https://www.javbus.com/ABF-365"
+      "webUrl": "https://www.mgstage.com/product/product_detail/ABF-365/"
     }
   ]
 }
@@ -952,13 +998,13 @@ Authorization: Bearer <token>
 | 字段 | 说明 |
 |------|------|
 | `keyword` | 规范化番号（大写、去空白） |
-| `source` | `graphql`（DMM 数字版，含素人）或 `javbus`（兜底） |
+| `source` | `graphql`（DMM 数字版，含素人）或 `javbus`（DMM 未命中兜底）或 `mgs`（MGS 番号直查 mgstage） |
 | `total` / `count` | 命中数（0 或 1） |
 | `works[].id` | 数字版 content id（如 `ipx00685`；素人为番号本体如 `smgn124`，用作「配信品番」） |
 | `works[].makerContentId` | メーカー品番（如 `SSIS-666`、`SMGN-124`） |
 | `works[].title` | 作品标题 |
 | `works[].description` | 内容简介（素人可能为空） |
-| `works[].floor` | 分类（`AV` / `AMATEUR`（素人）/ `javbus`） |
+| `works[].floor` | 分类（`AV` / `AMATEUR`（素人）/ `javbus` / `mgs`） |
 | `works[].contentType` | 内容类型（`TWO_DIMENSION` / VR 等） |
 | `works[].cover.medium` / `cover.large` | 封面直链 |
 | `works[].duration` | `{ seconds, minutes }` 收録时长 |
@@ -979,9 +1025,12 @@ Authorization: Bearer <token>
 | `works[].sampleImages` | 剧照列表 `[{number, smallUrl, largeUrl}]` |
 | `works[].sample2DMovie` | 2D 预告片 `{hlsMovieUrl, highestMovieUrl}` |
 | `works[].sampleVRMovie` | VR 预告片链接（VR 作品才有） |
-| `works[].webUrl` | javbus 兜底时附带：源站详情页链接 |
+| `works[].mgs` | 仅 MGS：`{average, count, price}`（评价与 `review` 相同，另带价格） |
+| `works[].webUrl` | javbus / mgs 兜底时附带：源站详情页链接 |
 
 > `source="javbus"` 时字段结构与源不同：`id`/`makerContentId` 均等于番号；`director` 为纯字符串（缺失为 `"未知"`）；`series`/`label`/`genres`/`actresses` 为纯字符串数组（非 `{id,name}` 对象）；`maker` 为纯字符串；`sampleImages.smallUrl`/`largeUrl` 取外部 CDN 源（mgstage 等，非 javbus `/pics/`）；不含 `description`/`price`/`review`/`directors`。前端按 `source` 分支渲染。
+
+> `source="mgs"`（mgstage 直查）时同样为纯字符串风格：`deliveryStartDate`（配信開始日）/ `makerReleasedAt`（商品発売日）/ `salesDate` 为 `YYYY/MM/DD`（无 ISO 后缀）；`director` 缺失为 `"未知"`；`series`（系列）/ `maker`（メーカー）/ `label`（レーベル）/ `genres` / `actresses` 均为纯字符串或数组；评分与价格在 `review` 中（含 `price`），并在 `mgs` 字段重复一份 `{average, count, price}`；另附 `webUrl`（mgstage 详情页原链）。封面与样图走 mgstage CDN（不会被 CORS 拦截），画质为 `pb_e_`/`cap_e_`。不含 DMM 专属的 `directors`/`relatedTags`/`playableDevices`/`sample2DMovie` 等字段；mgstage 的「対応デバイス（播放设备）」字段有意不采集。
 
 **错误码**
 
@@ -1066,8 +1115,8 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 
 - **今日更新**：7 天时间线选择器 + 卡片网格浏览
 - **热门排行**：销量排名展示，含排名序号与收藏数
-- **番号搜索**：输入番号（如 `ABP-477`）一键搜索，走 GraphQL 数字版直接探测（无 appid），结果以信息化布局展示完整详情；DMM 查不到时自动用 javbus JSON API 兜底，前端按 `source` 分支渲染两组字段
-- **图片预览**：点击卡片封面弹出大图弹窗，封面 + 剧照轮播，键盘 `←` `→` / `Esc` 导航；点击**番号**自动复制到剪贴板（含弹窗内番号，带"已复制"提示）；javbus 来源的封面（`www.javbus.com` 域，浏览器 CORS 拦截）在卡片与大图弹窗中替换为内置占位图，样图（mgstage CDN）正常显示
+- **番号搜索**：输入番号（如 `ABP-477`、`ABF-365`）一键搜索：MGS 番号（`ABF`/`SIRO`/`MAAN` 等前缀）走 mgstage.com 抓取，其余走 GraphQL 数字版直接探测（无 appid），DMM 查不到时自动用 javbus JSON API 兜底，前端按 `source` 分支独立渲染 DMM / javbus / mgs 三组字段（javbus/mgs 为纯字符串风格字段、导演缺失显示「未知」）
+- **图片预览**：点击卡片封面弹出大图弹窗，封面 + 剧照轮播，键盘 `←` `→` / `Esc` 导航；点击**番号**自动复制到剪贴板（含弹窗内番号，带"已复制"提示）；javbus 来源的封面（`www.javbus.com` 域，浏览器 CORS 拦截）在卡片与大图弹窗中替换为内置占位图，mgs 样图/封面与 javbus 兜底的样图（均 mgstage CDN）正常显示
 - **磁力面板**：三个来源（SUKEBEI / JAVDB / JAVBUS）Tab 展示磁力列表，磁力点击复制；**某个来源失败时该 Tab 内显示「重新获取」按钮**（`?s=<来源>` 定向重拉）；三个来源全为空的番号显示"当前番号暂无磁力链接"+「重新获取」按钮（全量重拉）
 - **播放平台**：点「跳转播放」并发探测 missav / supjav / jable / 123av 是否可播，可跳转的显示按钮、探测失败的标注"探测失败"
 - **配色主题**：6 套小清新风格一键切换（薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑）
@@ -1089,13 +1138,13 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 
 | API 字段 | 前端用途 |
 |----------|----------|
-| `cover.medium / cover.large` | 卡片封面图（javbus 来源为 javbus 域封面 → 替换为内置占位图） |
+| `cover.medium / cover.large` | 卡片封面图（javbus 来源为 javbus 域封面 → 替换为内置占位图；mgs 为 mgstage CDN 正常显示） |
 | `sampleImages[].largeUrl` | 弹窗图片列表（封面 + 全部剧照；javbus 来源无封面，仅样图，样图为外部 CDN） |
 | `price.price / price.discountPrice` | 卡片价格显示（单位为円） |
-| `priceTag` | 搜索结果价格角标 `<span class="sr-price-tag">…円</span>`，仅 DMM（graphql）来源有价格 |
-| `actresses` | 卡片演员标签（graphql 取 `[].name`；javbus 为纯字符串数组） |
-| `maker` | 卡片商家标签（graphql 为对象取其 `name`；javbus 为纯字符串「製作商」） |
-| `director` / `directors` | 搜索详情行「監督」：javbus 用 `director` 字符串（缺失 `"未知"`），graphql 用 `directors[].name` |
+| `priceTag` | 搜索结果价格角标 `<span class="sr-price-tag">…円</span>`，仅 DMM（graphql）与 MGS 来源有价格 |
+| `actresses` | 卡片演员标签（graphql 取 `[].name`；javbus / mgs 为纯字符串数组） |
+| `maker` | 卡片商家标签（graphql 为对象取其 `name`；javbus 为纯字符串「製作商」，mgs 为「メーカー」） |
+| `director` / `directors` | 搜索详情行「監督」：javbus / mgs 用 `director` 字符串（缺失 `"未知"`），graphql 用 `directors[].name` |
 | `bookmarkCount` | 排行榜收藏数（♥ N） |
 | `rank` (offset + i) | 排行榜排名（#N） |
 | `hasNext / total / offset / limit` | 分页控制 |

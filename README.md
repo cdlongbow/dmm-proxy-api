@@ -15,10 +15,10 @@
 - **播放平台探测**：`/api/findplay/:id` 并发探测 missav / supjav / jable / 123av 四个在线播放平台哪个能播放该番号，返回可跳转搜索链接与 `playable` 标识；命中缓存，未命中 1 小时（`lua_shared_dict findplay_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 2%）
 - **每日更新列表**：`/api/todayupdate` 通过 DMM FANZA GraphQL API 获取每日更新的作品列表，支持按日期查询、分页
 - **热门排行榜**：`/api/ranking` 按销售排名分数返回热门作品，支持分页
-- **番号搜索**：`/api/search/:id` 将番号直接展开为候选数字版 content id（`maker` + 补零序号 + 常见前缀）并经 video.dmm.co.jp 的 GraphQL `ContentPageData` 探测，**无需 affiliate appid**，命中即返回完整详情；**DMM 查不到时自动用 javbus JSON API 兜底**（`source="javbus"`，返回识别码/发行日/时长/导演/制作商/发行商/类别/演员/样图等，导演缺失显示「未知」、样图走外部 CDN 避免 CORS）；大小写不敏感、忽略连字符；结果缓存 6 小时（`search_cache`，占 `DMM_CACHE_TOTAL` 的 5%）
+- **番号搜索**：`/api/search/:id` 将番号直接展开为候选数字版 content id（`maker` + 补零序号 + 常见前缀）并经 video.dmm.co.jp 的 GraphQL `ContentPageData` 探测，**无需 affiliate appid**，命中即返回完整详情；**MGS 番号**（如 `ABF-365`/`SIRO5665`/`200GANA-2359`，前缀+数字后缀规则见 `lua/api_mgs.lua`）**直接抓取 mgstage.com 产品详情页**（`source="mgs"`，DMM 不收录这些作品，返回简介/时长/配信开始日/发售日/评分/价格/演员/系列/厂商/品牌/类型/样图）；其余番号 **DMM 查不到时自动用 javbus JSON API 兜底**（`source="javbus"`，返回识别码/发行日/时长/导演/制作商/发行商/类别/演员/样图等，导演缺失显示「未知」、样图走外部 CDN 避免 CORS）；大小写不敏感、忽略连字符；结果缓存 6 小时（`search_cache`，占 `DMM_CACHE_TOTAL` 的 5%）
 - **会话令牌（Session Token）**：`/api/session` 签发**短时效、绑定客户端 IP** 的 token 给前端使用，主 token（`DMM_AUTH_TOKEN`）永不下发浏览器；`/api/*` 同时接受主 token 或 session token（`Authorization: Bearer`）
 - **结果缓存**：todayupdate / ranking / film_sample 缓存 8 小时、search / magnet 6 小时、findplay（命中 6h / 未命中 1h）、trailer_direct 7 天；缓存内存总预算由 `DMM_CACHE_TOTAL` 按固定比例自动分配（findplay 2% / ranking 5% / search 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 其余 58%）
-- **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览、**番号搜索**（前端按 `source` 分支渲染 DMM / javbus 两组字段），卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航；点击番号一键复制；磁力面板三源 Tab + 失败来源「重新获取」、全部无数据「重新获取」；播放平台一键跳转
+- **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览、**番号搜索**（前端按 `source` 分支独立渲染 DMM / javbus / mgs 三组字段），卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航；点击番号一键复制；磁力面板三源 Tab + 失败来源「重新获取」、全部无数据「重新获取」；播放平台一键跳转
 - **多配色主题**：6 套小清新配色方案（薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑），一键切换，自动保存
 - **中英双语**：界面支持中文 / English 切换，自动保存偏好
 - **智能 CID 探测**：番号（如 `ABP-477`）自动转成 DMM 内部多个候选 CID（如 `abp00477`、`abp0477`、`1abp477`）逐一探测，命中第一个可用项
@@ -92,6 +92,7 @@ dmm-proxy-api/
 │   ├── api_ranking.lua     # /api/ranking 实现（热门排行榜）
 │   ├── api_search.lua      # /api/search 实现（番号→候选 id 探测 GraphQL，无需 appid，缓存）
 │   ├── api_javbus.lua      # javbus JSON API 兜底（/api/search 在 DMM 查不到番号时自动调用）
+│   ├── api_mgs.lua         # MGStage 番号源（/api/search 命中 MGS 前缀时直接抓取 mgstage.com 详情页）
 │   └── api_session.lua     # /api/session 实现（前端短时效 session token）
 ├── static/                 # 前端静态文件（docker volume 挂载，改后刷新即可）
 │   └── index.html          # SPA 单页应用（今日更新 / 排行榜 / 主题切换 / 多语言）
@@ -224,6 +225,9 @@ curl -s -H "$HEADER" http://localhost:8080/api/ranking
 
 # 番号搜索（大小写不敏感，上游统一大写）
 curl -s -H "$HEADER" http://localhost:8080/api/search/abp-477
+
+# 番号搜索（MGS 番号走 mgstage，source=mgs）
+curl -s -H "$HEADER" http://localhost:8080/api/search/ABF-365
 ```
 
 ---
@@ -451,7 +455,7 @@ GET /api/search/:id
 Authorization: Bearer <token>
 ```
 
-通过番号直接检索 DMM 数字版作品，**不依赖 affiliate appid**：番号（大小写不敏感、忽略连字符）展开为候选数字版 content id（`<maker>` + 补零序号，含 `1`/`d_`/`h_` 前缀），逐个用 video.dmm.co.jp 的 GraphQL `ContentPageData` 探测（`lua/api_content.lua`），首个命中即返回**完整详情**（简介 / 时长 / 監督 / 类型 / 剧照 / 预告 / 价格等，见 api.md §4.6）。候选命中后校验「发出的 cid / makerContentId」与请求番号一致，防止补零候选误命中他人作品；素人番号（如 `SMGN-124`，数字 id 即番号本体）在 AV 候选命中但 `floor=AMATEUR` 时改用 `isAmateur=true / isAv=false` 重查以补齐 `amateurActress`，AV 候选全部失配时也以原始番号直查素人命名空间（`floor="AMATEUR"`）。DMM 未命中时自动用 **javbus JSON API 兜底**（`lua/api_javbus.lua`，`https://javbus-api.131433.xyz/api/movies/<番号>`，返回 識別碼 / 發行日期 / 長度 / 導演 / 製作商 / 發行商 / 系列 / 類別 / 演員 / 樣品圖像 等；导演缺失时为「未知」；样图用外部 CDN 链接避免 CORS 拦截；`source="javbus"`）。前端按 `source` 分支渲染：javbus 来源字段为纯字符串/字符串数组，DMM 来源为 `{id,name}` 对象数组；javbus 域封面被浏览器拦截时以内置占位图替代。结果按番号缓存 **6 小时**（`lua_shared_dict search_cache`，占 `DMM_CACHE_TOTAL` 的 5%），详情再以 `gc:<cid>`（AV）/ `gc:a:<cid>`（素人）缓存 7 小时。
+通过番号直接检索 DMM 数字版作品，**不依赖 affiliate appid**：番号（大小写不敏感、忽略连字符）展开为候选数字版 content id（`<maker>` + 补零序号，含 `1`/`d_`/`h_` 前缀），逐个用 video.dmm.co.jp 的 GraphQL `ContentPageData` 探测（`lua/api_content.lua`），首个命中即返回**完整详情**（简介 / 时长 / 監督 / 类型 / 剧照 / 预告 / 价格等，见 api.md §4.6）。候选命中后校验「发出的 cid / makerContentId」与请求番号一致，防止补零候选误命中他人作品；素人番号（如 `SMGN-124`，数字 id 即番号本体）在 AV 候选命中但 `floor=AMATEUR` 时改用 `isAmateur=true / isAv=false` 重查以补齐 `amateurActress`，AV 候选全部失配时也以原始番号直查素人命名空间（`floor="AMATEUR"`）。**MGS 番号分支**：番号命中 MGS 前缀（官方系统码 + 字母码，前缀后紧跟数字才算命中，避免 `GALS-001` 误判成 `GAL-123`；完整前缀表见 `lua/api_mgs.lua`）时**跳过 DMM 与 javbus**，直接抓取 `www.mgstage.com/product/product_detail/<前缀>-<序号>/`（需 `Cookie: adc=1` 年龄门，`source="mgs"`；DMM 不收录这些作品）。DMM 未命中时自动用 **javbus JSON API 兜底**（`lua/api_javbus.lua`，`https://javbus-api.131433.xyz/api/movies/<番号>`，返回 識別碼 / 發行日期 / 長度 / 導演 / 製作商 / 發行商 / 系列 / 類別 / 演員 / 樣品圖像 等；导演缺失时为「未知」；样图用外部 CDN 链接避免 CORS 拦截；`source="javbus"`）。前端按 `source` 分支渲染：javbus / mgs 来源字段为纯字符串/字符串数组、导演为单值（mgs 导演缺失显示「未知」、评分价格置于 `w.mgs`），DMM 来源为 `{id,name}` 对象数组；javbus 域封面被浏览器拦截时以内置占位图替代，mgs 封面与样图走 mgstage CDN。结果按番号缓存 **6 小时**（`lua_shared_dict search_cache`，占 `DMM_CACHE_TOTAL` 的 5%），详情再以 `gc:<cid>`（AV）/ `gc:a:<cid>`（素人）缓存 7 小时。
 
 ```http
 # 小写番号也能搜（上游统一大写）
@@ -486,7 +490,7 @@ Authorization: Bearer <token>
 }
 ```
 
-候选探测未命中时自动用 **javbus JSON API 兜底**（`source="javbus"`，`https://javbus-api.131433.xyz/api/movies/<番号>`，返回 識別碼/發行日期/長度/導演/製作商/發行商/系列/類別/演員/樣品圖像 等，导演缺失显示「未知」，样图使用外部 CDN 链接避免 CORS 拦截，附 `webUrl` 源站链接）。两者皆无结果时才返回 `200` 且 `works` 为空数组。
+（MGS 番号除外，直接走 MGS 分支）候选探测未命中时自动用 **javbus JSON API 兜底**（`source="javbus"`，`https://javbus-api.131433.xyz/api/movies/<番号>`，返回 識別碼/發行日期/長度/導演/製作商/發行商/系列/類別/演員/樣品圖像 等，导演缺失显示「未知」，样图使用外部 CDN 链接避免 CORS 拦截，附 `webUrl` 源站链接）。两者皆无结果时才返回 `200` 且 `works` 为空数组。
 
 ### 磁力链接聚合
 
@@ -497,7 +501,7 @@ Authorization: Bearer <token>
 
 > 番号不区分大小写；响应 `200` 状态下各来源单独报错。
 
-按番号并发聚合三个独立站点的磁力链接，结果按 `sources[]` 分组：**sukebei**（RSS，磁力由 infoHash + 官方 tracker 重建）、**javdb**（搜索页 → 详情页磁力表格）、**javbus**（搜索页 → `gid/uc` → ajax 磁力表格）。单个来源失败不影响其它来源（该来源 `count: 0` 并附 `error`）。结果按 `(来源, 番号)` 缓存 **6 小时**（`lua_shared_dict magnet_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 58%）。
+按番号并发聚合三个独立站点的磁力链接，结果按 `sources[]` 分组：**sukebei**（RSS，磁力由 infoHash + 官方 tracker 重建）、**javdb**（官方 App JSON API：`jdsignature` 签名头 + 固定 query 参数，无需登录；App API 不可用/未命中时回落 javdb.com 网页抓取）、**javbus**（搜索页 → `gid/uc` → ajax 磁力表格）。单个来源失败不影响其它来源（该来源 `count: 0` 并附 `error`）。结果按 `(来源, 番号)` 缓存 **6 小时**（`lua_shared_dict magnet_cache`，容量由 `DMM_CACHE_TOTAL` 分配、占 58%）。
 
 ```http
 # 全部三个来源
@@ -535,13 +539,13 @@ Authorization: Bearer <token>
         }
       ]
     },
-    { "source": "javdb", "count": 14, "magnets": [ { "name": "...", "magnet": "...", "info_hash": "...", "size": "3.5 GB", "date": "2025-11-11", "tags": ["高清", "字幕"], "url": "https://javdb.com/v/WrBQ7" } ] },
+    { "source": "javdb", "count": 14, "magnets": [ { "name": "SSWI-110 中文字幕", "magnet": "magnet:?xt=urn:btih:cd34...&dn=SSWI-110", "info_hash": "cd34...", "size": "3.5 GB", "size_bytes": 3758096384, "date": "2025-11-11", "date_str": "2025-11-11", "files": 4, "tags": ["中字", "高清"] } ] },
     { "source": "javbus", "count": 5, "magnets": [ { "name": "...", "magnet": "...", "info_hash": "...", "size": "2.4 GB", "date": "2025-11-15", "url": "https://www.javbus.com/SSNI-730" } ] }
   ]
 }
 ```
 
-各来源磁力字段差异：`sukebei` 额外带 `seeders/leechers/downloads/category/torrent_url`；`javdb` 额外带 `tags`（如 `["高清","字幕"]）；`date` 在 sukebei 为 epoch 秒，javdb/javbus 为日期字符串。完整字段说明见 [api.md](./api.md#44-磁力链接聚合)。
+各来源磁力字段差异：`sukebei` 额外带 `seeders/leechers/downloads/category/torrent_url`；`javdb`（App API 路径）额外带 `files`（文件数）、`size_bytes`（字节数）与 `tags`（如 `["中字","高清"]`，网页兜底路径则附 `url` 指向 javdb 详情页）；`date` 在 sukebei 为 epoch 秒，javdb/javbus 为日期字符串。完整字段说明见 [api.md](./api.md#44-磁力链接聚合)。
 
 参数：`s`(可选，`sukebei`/`javdb`/`javbus`，可逗号分隔，默认全部)。
 

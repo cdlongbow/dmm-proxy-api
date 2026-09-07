@@ -2292,6 +2292,7 @@ function selectDate(idx) {
   renderTimeline();
   syncModeButtons();
   loadTodayData();
+  updateHash();
 }
 
 // ========== Calendar popover ==========
@@ -2358,6 +2359,7 @@ function pickCalendarDate(val) {
   renderTimeline();
   syncModeButtons();
   loadTodayData();
+  updateHash();
 }
 
 // ========== Calendar date input (type-a-date) ==========
@@ -2382,6 +2384,7 @@ function pickTypedDate() {
   renderTimeline();
   syncModeButtons();
   loadTodayData();
+  updateHash();
 }
 function parseDateInput(s) {
   let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -2947,6 +2950,7 @@ function enterSearchMode() {
   const input = document.getElementById('search-input');
   if (currentSearch && !input.value) input.value = currentSearch;
   setTimeout(() => { input.focus(); input.select(); }, 60);
+  updateHash();
 }
 
 function toggleSearchPill() {
@@ -2975,6 +2979,7 @@ function runSearch() {
   currentSearch = val;
   enterSearchMode();
   loadSearchData();
+  updateHash();
 }
 
 function onSearchKey(e) {
@@ -3000,6 +3005,22 @@ function loadCurrentData() {
 }
 
 // ========== Mode Switch ==========
+
+// Persist the current view in location.hash so a page refresh / browser
+// back-forward lands on the same interface: `#today`, `#today/2026-09-08`,
+// `#ranking`, `#search`, `#search/ABF-365`. replaceState avoids polluting
+// history and does not fire hashchange.
+function updateHash() {
+  let hash = `#${currentMode}`;
+  if (currentMode === 'search' && currentSearch) {
+    hash = `#search/${currentSearch}`;
+  } else if (currentMode === 'today') {
+    const d = DATES[currentDateIdx] || TODAY;
+    if (d !== TODAY) hash = `#today/${d}`;
+  }
+  if (location.hash !== hash) history.replaceState(null, '', hash);
+}
+
 function goToday() {
   switchMode('today');
   const todayIdx = DATES.indexOf(TODAY);
@@ -3041,6 +3062,7 @@ function switchMode(mode) {
   }
   syncModeButtons();
   loadCurrentData();
+  updateHash();
 }
 
 // ========== 18+ / NSFW Gate ==========
@@ -3077,6 +3099,47 @@ function initApp() {
   applyBrowse();
   applyLang();
   initDrag();
+
+  // Restore the view saved in location.hash so a refresh lands on the same
+  // interface (#today[/YYYY-MM-DD] / #ranking / #search[/番号]).
+  const hash = location.hash.replace(/^#/, '');
+  if (hash === 'ranking') {
+    switchMode('ranking'); // switchMode loads the data itself
+    return;
+  }
+  if (hash === 'today' || hash.startsWith('today/')) {
+    const date = (hash.split('/')[1] || '').replace(/\s/g, '');
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= TODAY) {
+      // Same date-restore path as pickCalendarDate: unknown dates (outside the
+      // recent 30-day window) are appended to DATES so the timeline shows them.
+      currentDateIdx = DATES.indexOf(date);
+      if (currentDateIdx === -1) {
+        DATES.push(date);
+        DATES.sort();
+        currentDateIdx = DATES.indexOf(date);
+      }
+      currentPage = 0;
+      document.getElementById('timeline-section').style.display = '';
+      document.getElementById('search-pill').classList.remove('open');
+      renderTimeline();
+      syncModeButtons();
+      updateSubtitle();
+      loadTodayData();
+      return;
+    }
+    switchMode('today');
+    return;
+  }
+  if (hash.startsWith('search')) {
+    const code = (hash.split('/')[1] || '').toUpperCase();
+    if (code && !currentSearch) {
+      currentSearch = code;
+      document.getElementById('search-input').value = code;
+    }
+    enterSearchMode();
+    loadSearchData();
+    return;
+  }
   loadTodayData();
 }
 

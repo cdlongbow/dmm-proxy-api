@@ -109,7 +109,7 @@ end
 -- Public API
 --------------------------------------------------------------------------------
 
--- Resolve `code` (e.g. "ABF-364") through the javbus JSON API and return a
+-- Resolve `code` (e.g. "REBD-1061") through the javbus JSON API and return a
 -- public work object, or (nil, reason).
 function _M.fetch(code)
     local norm = string.upper(code):gsub("%s+", "")
