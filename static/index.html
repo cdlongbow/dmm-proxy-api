@@ -2854,8 +2854,19 @@ function nextPage() { currentPage++; loadCurrentData(); }
 let loadSeq = 0;
 let abortCtrl = null;
 
+// Discard any in-flight load: bump the sequence so a late response is dropped
+// and abort the underlying fetch. Used on mode switches even when no new
+// request follows, so a pending home response can never be rendered with the
+// search layout (or vice versa).
+function invalidatePendingRequests() {
+  loadSeq++;
+  if (abortCtrl) abortCtrl.abort();
+  abortCtrl = null;
+}
+
 async function loadData(url) {
   const seq = ++loadSeq;
+  const modeAtStart = currentMode;
   if (abortCtrl) abortCtrl.abort();
   abortCtrl = new AbortController();
   const container = document.getElementById('cards');
@@ -2878,7 +2889,7 @@ async function loadData(url) {
   try {
     let data = await doFetch();
     if (data === null) data = await doFetch();
-    if (seq !== loadSeq) return;
+    if (seq !== loadSeq || modeAtStart !== currentMode) return;
     const m = mapResponse(data);
     if (currentMode === 'search') {
       renderSearchResult(m);
@@ -2886,7 +2897,7 @@ async function loadData(url) {
       renderCards(m);
     }
   } catch (e) {
-    if (e.name === 'AbortError' || seq !== loadSeq) return;
+    if (e.name === 'AbortError' || seq !== loadSeq || modeAtStart !== currentMode) return;
     console.warn('API unavailable, using mock data:', e.message);
     if (currentMode === 'search') {
       container.innerHTML = `<div class="status-msg">${t('load_failed')}</div>`;
@@ -2928,6 +2939,7 @@ function enterSearchMode() {
   }
   currentMode = 'search';
   currentPage = 0;
+  invalidatePendingRequests();
   document.getElementById('search-pill').classList.add('open');
   document.getElementById('timeline-section').style.display = 'none';
   syncModeButtons();
@@ -3010,6 +3022,7 @@ function syncModeButtons() {
 function switchMode(mode) {
   currentMode = mode;
   currentPage = 0;
+  invalidatePendingRequests();
   if (mode === 'today' || mode === 'ranking') {
     lastMode = mode;
     currentSearch = '';
