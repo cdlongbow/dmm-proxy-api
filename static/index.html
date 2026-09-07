@@ -361,17 +361,132 @@
   }
   .calendar-input {
     position: absolute;
-    top: 42px;
+    top: 4px;
     right: 16px;
-    width: 0;
-    height: 0;
+    width: 34px;
+    height: 34px;
     padding: 0;
     margin: 0;
     border: none;
     opacity: 0;
-    overflow: hidden;
     pointer-events: none;
   }
+
+  /* ---- calendar popover (left of the 📅 button) ---- */
+  .calendar-popover {
+    position: absolute;
+    top: 4px;
+    right: calc(16px + 34px + 8px);
+    width: 248px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 14px 40px rgba(20,30,50,.18);
+    padding: 12px;
+    z-index: 20;
+    display: none;
+  }
+  .calendar-popover.open { display: block; }
+  .cp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .cp-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .cp-nav {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all .15s;
+  }
+  .cp-nav:hover {
+    background: var(--primary-light);
+    color: #fff;
+    border-color: var(--primary-light);
+  }
+  .cp-foot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-end;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .cp-input {
+    flex: 1;
+    min-width: 0;
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    border-radius: 9px;
+    padding: 5px 8px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .cp-input::placeholder { color: var(--text-light); }
+  .cp-input:focus { border-color: var(--primary); }
+  .cp-today {
+    flex: none;
+    border: none;
+    background: none;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary-dark);
+    cursor: pointer;
+    padding: 4px 12px;
+    border-radius: 10px;
+    transition: background .15s;
+  }
+  .cp-today:hover {
+    background: var(--primary-light);
+    color: #fff;
+  }
+  .cp-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+  .cp-dow {
+    font-size: 10px;
+    color: var(--text-light);
+    text-align: center;
+    padding: 4px 0;
+  }
+  .cp-d {
+    text-align: center;
+    font-size: 12px;
+    line-height: 28px;
+    height: 28px;
+    border-radius: 8px;
+    color: var(--text);
+    cursor: pointer;
+    transition: background .12s, color .12s;
+  }
+  .cp-d:hover { background: var(--primary-light); color: #fff; }
+  .cp-d.dis { color: var(--border); cursor: default; pointer-events: none; }
+  .cp-d.today { font-weight: 700; color: var(--accent); }
+  .cp-d.sel {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 700;
+  }
+  .cp-d.sel:hover { background: var(--primary-dark); color: #fff; }
 
   /* ---- expanding search pill (mode-bar) ---- */
   .search-pill {
@@ -1365,7 +1480,8 @@
     .timeline-day { flex-basis: 46px; }
     .timeline-date { font-size: 12px; }
     .calendar-btn { right: 6px; width: 30px; height: 30px; font-size: 14px; }
-    .calendar-input { right: 6px; }
+    .calendar-input { right: 6px; width: 30px; height: 30px; }
+    .calendar-popover { right: calc(6px + 30px + 6px); }
     .card-body { padding: 10px 12px 12px; }
     .card-title { font-size: 13px; -webkit-line-clamp: 2; }
     .card-price { font-size: 11px; margin-top: 4px; }
@@ -1441,7 +1557,21 @@
   <div class="timeline-wrap">
     <div class="timeline-track" id="timeline-track"></div>
     <button class="calendar-btn" onclick="openCalendar()">📅</button>
-    <input type="date" id="calendar-input" class="calendar-input" max="" onchange="onCalendarChange()">
+    <input type="date" id="calendar-input" class="calendar-input" max="" tabindex="-1" aria-hidden="true">
+    <div class="calendar-popover" id="calendar-popover">
+      <div class="cp-head">
+        <button type="button" class="cp-nav" onclick="calJump(-1)">«</button>
+        <button type="button" class="cp-nav" onclick="calMove(-1)">‹</button>
+        <span class="cp-title" id="cp-title"></span>
+        <button type="button" class="cp-nav" onclick="calMove(1)">›</button>
+        <button type="button" class="cp-nav" onclick="calJump(1)">»</button>
+      </div>
+      <div class="cp-foot">
+        <input type="text" id="cp-date-input" class="cp-input" inputmode="numeric" autocomplete="off" spellcheck="false" onkeydown="onCpInputKey(event)">
+        <button type="button" class="cp-today" id="cp-today-btn" onclick="pickCalendarDate(TODAY)">今天</button>
+      </div>
+      <div class="cp-grid" id="cp-grid"></div>
+    </div>
   </div>
 </div>
 
@@ -1541,6 +1671,8 @@ const I18N = {
     search_place: '输入番号',
     search_title: '搜索 %s',
     search_empty: '请输入番号',
+    cal_today: '今天',
+    cal_ph: '输入日期',
     
     sr_delivery: '配信开始日',
     sr_released: '发售日',
@@ -1606,6 +1738,8 @@ const I18N = {
     search_place: 'Enter a code',
     search_title: 'Search %s',
     search_empty: 'Please enter a code',
+    cal_today: 'Today',
+    cal_ph: 'Enter date',
     sr_delivery: 'Delivery start',
     sr_released: 'Released',
     sr_duration: 'Runtime',
@@ -2160,20 +2294,61 @@ function selectDate(idx) {
   loadTodayData();
 }
 
+// ========== Calendar popover ==========
+// Native <input type="date"> pickers anchor themselves wherever the browser
+// chooses, which can push the popup off-screen on mobile. We render our own
+// calendar anchored to the left of the 📅 button instead.
+let calViewYear = 0, calViewMonth = 0; // viewport year/month (1-12) shown
 function openCalendar() {
-  const input = document.getElementById('calendar-input');
-  input.value = DATES[currentDateIdx];
-  if (typeof input.showPicker === 'function') {
-    input.showPicker();
-  } else {
-    input.click();
-  }
+  const base = (DATES[currentDateIdx] || TODAY);
+  const [y, m] = base.split('-').map(Number);
+  calViewYear = y; calViewMonth = m;
+  renderCalendar();
+  document.getElementById('calendar-popover').classList.add('open');
 }
-function onCalendarChange() {
-  const input = document.getElementById('calendar-input');
-  const val = input.value;
-  if (!val) return;
-  if (val > TODAY) { input.value = TODAY; return; }
+function closeCalendar() {
+  document.getElementById('calendar-popover').classList.remove('open');
+  const input = document.getElementById('cp-date-input');
+  if (input) input.value = '';
+}
+function calMove(dir) {
+  let m = calViewMonth + dir, y = calViewYear;
+  if (m < 1) { m = 12; y--; }
+  if (m > 12) { m = 1; y++; }
+  calViewYear = y; calViewMonth = m;
+  renderCalendar();
+}
+function calJump(dir) {
+  calViewYear += dir;
+  renderCalendar();
+}
+function renderCalendar() {
+  const title = document.getElementById('cp-title');
+  const grid = document.getElementById('cp-grid');
+  document.getElementById('cp-today-btn').textContent = t('cal_today');
+  const inputEl = document.getElementById('cp-date-input');
+  if (inputEl && inputEl.placeholder !== t('cal_ph')) inputEl.placeholder = t('cal_ph');
+  const now = new Date(calViewYear, calViewMonth - 1, 1);
+  const firstDow = now.getDay();
+  const daysInMonth = new Date(calViewYear, calViewMonth, 0).getDate();
+  title.textContent = `${calViewYear}-${String(calViewMonth).padStart(2, '0')}`;
+  const dows = currentLang === 'zh' ? ['日','一','二','三','四','五','六'] : ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  let html = '';
+  dows.forEach(w => { html += `<span class="cp-dow">${w}</span>`; });
+  for (let i = 0; i < firstDow; i++) html += '<span></span>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const val = `${calViewYear}-${String(calViewMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const future = val > TODAY;
+    const sel = val === (DATES[currentDateIdx] || TODAY);
+    const today = val === TODAY;
+    let cls = 'cp-d' + (future ? ' dis' : '') + (sel ? ' sel' : '') + (today ? ' today' : '');
+    html += `<span class="${cls}" data-v="${val}" ${future ? '' : `onclick="pickCalendarDate('${val}')"`}>${d}</span>`;
+  }
+  grid.innerHTML = html;
+}
+function pickCalendarDate(val) {
+  closeCalendar();
+  if (!val || val > TODAY) return;
   if (!DATES.includes(val)) {
     DATES.push(val);
     DATES.sort();
@@ -2183,6 +2358,44 @@ function onCalendarChange() {
   renderTimeline();
   syncModeButtons();
   loadTodayData();
+}
+
+// ========== Calendar date input (type-a-date) ==========
+// Accepts YYYY-MM-DD, YYYYMMDD, or YYYY-M-D; Enter/change picks the date.
+function onCpInputKey(e) {
+  if (e.key === 'Enter') pickTypedDate();
+}
+function pickTypedDate() {
+  const input = document.getElementById('cp-date-input');
+  const raw = (input.value || '').trim();
+  if (!raw) return;
+  const val = parseDateInput(raw);
+  if (!val) { input.select(); return; }
+  if (val > TODAY) { input.select(); return; }
+  closeCalendar();
+  if (!DATES.includes(val)) {
+    DATES.push(val);
+    DATES.sort();
+  }
+  currentDateIdx = DATES.indexOf(val);
+  currentPage = 0;
+  renderTimeline();
+  syncModeButtons();
+  loadTodayData();
+}
+function parseDateInput(s) {
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  let Y, MO, D;
+  if (m) {
+    Y = +m[1]; MO = +m[2]; D = +m[3];
+  } else {
+    m = s.match(/^(\d{8})$/);
+    if (!m) return null;
+    Y = +s.slice(0, 4); MO = +s.slice(4, 6); D = +s.slice(6, 8);
+  }
+  const dt = new Date(Y, MO - 1, D);
+  if (dt.getFullYear() !== Y || dt.getMonth() !== MO - 1 || dt.getDate() !== D) return null;
+  return `${Y}-${String(MO).padStart(2, '0')}-${String(D).padStart(2, '0')}`;
 }
 
 // ========== Modal ==========
@@ -2485,6 +2698,11 @@ function copyCode(el) {
 }
 
 document.addEventListener('click', e => {
+  const pop = document.getElementById('calendar-popover');
+  if (pop && pop.classList.contains('open') &&
+      !pop.contains(e.target) && !e.target.closest('.calendar-btn')) {
+    closeCalendar();
+  }
   const el = e.target.closest('.card-id');
   if (!el) return;
   e.preventDefault();
