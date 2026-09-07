@@ -422,20 +422,24 @@ fragment ReviewSummary on ReviewSummary {
   __typename
 }]]
 
-local function cache_get(cid)
+local function cache_key(cid, amateur)
+    return "gc:" .. (amateur and "a:" or "") .. cid
+end
+
+local function cache_get(cid, amateur)
     local dict = ngx.shared.search_cache
     if not dict then
         return nil
     end
-    return dict:get("gc:" .. cid)
+    return dict:get(cache_key(cid, amateur))
 end
 
-local function cache_set(cid, body)
+local function cache_set(cid, body, amateur)
     local dict = ngx.shared.search_cache
     if not dict then
         return
     end
-    dict:set("gc:" .. cid, body, CACHE_TTL)
+    dict:set(cache_key(cid, amateur), body, CACHE_TTL)
 end
 
 -- Build candidate digital ids from an affiliate content_id.
@@ -449,8 +453,12 @@ local function content_variants(content_id)
         end
     end
     add(content_id)
-    local prefix = content_id:match("^%a+")
-    local num = content_id:match("(%d+)$")
+    -- Widen only clean <letters><digits> ids (affiliate form "ipx685" ->
+    -- "ipx00685"/"ipx0685"). Prefixed candidates (d_..., h_..., 1...) must be
+    -- probed verbatim: a lax ^%a+ split on "d_smgn00124" yields prefix "d" and
+    -- serial "00124", producing "d0124" which is a real, unrelated content
+    -- (HANY-D—029 / シロウトゲッター) and caused a false hit.
+    local prefix, num = content_id:match("^(%a+)(%d+)$")
     if prefix and num and #num < 8 then
         add(prefix .. string.format("%05d", tonumber(num)))
         add(prefix .. string.format("%04d", tonumber(num)))
@@ -459,8 +467,9 @@ local function content_variants(content_id)
 end
 
 -- Single GraphQL query for one id. Returns the raw ppvContent+reviewSummary
--- table or (nil, err).
-local function fetch_raw(cid)
+-- table or (nil, err). When amateur is true the query targets the 素人
+-- (amateur) namespace via isAmateur=true / isAv=false.
+local function fetch_raw(cid, amateur)
     local payload = cjson.encode({
         operationName = "ContentPageData",
         query = QUERY,
@@ -468,9 +477,9 @@ local function fetch_raw(cid)
             id = cid,
             guestToken = config.VIDEO_GQL and config.VIDEO_GQL.guest_token or "",
             isLoggedIn = false,
-            isAmateur = false,
+            isAmateur = amateur == true,
             isAnime = false,
-            isAv = true,
+            isAv = amateur ~= true,
             isCinema = false,
             shouldFetchRelatedTags = true,
             shouldGetBookmark = false,
@@ -577,6 +586,20 @@ local function normalize_detail(raw)
             }
         end
     end
+    if type(pc.amateurActress) == "table" then
+        local a = pc.amateurActress
+        actresses[#actresses + 1] = {
+            id = a.id,
+            name = a.name,
+            nameRuby = nil,
+            imageUrl = a.imageUrl,
+            bustTop = nil,
+            bust = a.bust,
+            waist = a.waist,
+            hip = a.hip,
+            height = a.height,
+        }
+    end
 
     local playable = {}
     if pc.playableInfo and type(pc.playableInfo.playableDevices) == "table" then
@@ -674,15 +697,19 @@ local function normalize_detail(raw)
     return detail
 end
 
--- Public entry point: get(affiliate_content_id) -> normalized detail or nil.
-function _M.get(content_id)
+-- Public entry point: get(affiliate_content_id, opts) -> normalized detail or
+-- nil. opts.amateur switches to the 素人 (amateur) namespace; in that mode the
+-- id is used verbatim (amateur digital ids equal the raw code, e.g. "smgn124")
+-- so the AV padding sweep in content_variants is skipped.
+function _M.get(content_id, opts)
     if not content_id or content_id == "" then
         return nil
     end
+    local amateur = opts and opts.amateur == true
 
-    local variants = content_variants(content_id)
-    for _, cid in ipairs(variants) do
-        local cached = cache_get(cid)
+    local list = amateur and { content_id } or content_variants(content_id)
+    for _, cid in ipairs(list) do
+        local cached = cache_get(cid, amateur)
         if cached then
             local ok, body = pcall(cjson.decode, cached)
             if ok and body and body.resolved_id then
@@ -690,15 +717,30 @@ function _M.get(content_id)
             end
         end
 
-        local raw, err = fetch_raw(cid)
+        -- The Docker DNS resolver intermittently fails to resolve
+        -- api.video.dmm.co.jp ("could not be resolved (2: Server failure)").
+        -- A clean null ppvContent is a legitimate miss (nil, nil), but a hard
+        -- err is a transient transport failure worth retrying.
+        local raw, err
+        for attempt = 1, 3 do
+            raw, err = fetch_raw(cid, amateur)
+            if raw or not err then
+                break
+            end
+            if attempt < 3 then
+                ngx.log(ngx.WARN, "content fetch failed for cid=" .. cid
+                    .. ": " .. tostring(err) .. ", retrying (" .. attempt .. "/2)")
+                ngx.sleep(attempt * 0.3)
+            else
+                ngx.log(ngx.ERR, "content fetch failed for cid=" .. cid .. ": " .. tostring(err))
+            end
+        end
         if raw then
             local detail = normalize_detail(raw)
             detail.resolved_id = cid
             local body = cjson.encode(detail)
-            cache_set(cid, body)
+            cache_set(cid, body, amateur)
             return detail
-        elseif err then
-            ngx.log(ngx.ERR, "content fetch failed for cid=" .. cid .. ": " .. tostring(err))
         end
     end
     return nil
@@ -758,8 +800,76 @@ local function candidate_ids(code)
     return out
 end
 
+-- Split a product code into (maker-letters, numeric serial). The maker run is
+-- the letters left over after dropping the trailing digit run, so leading
+-- 1/d_/h_ prefixes collapse into it ("d_abp00477" -> "abp", 477;
+-- "1namh00075" -> "namh", 75). Returns nil when no serial is present.
+local function parse_ids(s)
+    local t = tostring(s or ""):lower():gsub("[^%a%d]", "")
+    local serial = tonumber(t:match("(%d+)$"))
+    if not serial then
+        return nil, nil
+    end
+    local maker = t:gsub("%d+$", ""):gsub("%d", "")
+    if maker == "" then
+        return nil, serial
+    end
+    return maker, serial
+end
+
+-- Verify a raw result actually belongs to the requested 番号.
+-- 1) the content id returned by DMM must equal the id we actually sent, and
+-- 2) when makerContentId is present it must share the same serial number and
+--    carry the requested maker (as a suffix run; the "1"/"d_"/"h_" prefix may
+--    sit in front). A mismatch means the query resolved to an unrelated content
+--    (e.g. "d0124" = HANY-D—029 for a SMGN-124 request), i.e. a wrong query.
+local function consistent(detail, cid, code)
+    if type(detail) ~= "table" then
+        return false
+    end
+    if detail.id and cid and detail.id ~= cid then
+        return false
+    end
+    local c_maker, c_serial = parse_ids(code)
+    if not c_serial then
+        return true
+    end
+    local mk = detail.makerContentId
+    if not mk or mk == "" then
+        return true
+    end
+    local m_maker, m_serial = parse_ids(mk)
+    if not m_serial then
+        return true
+    end
+    if m_serial ~= c_serial then
+        return false
+    end
+    if m_maker and c_maker then
+        local long, short = m_maker, c_maker
+        if #long < #short then
+            long, short = c_maker, m_maker
+        end
+        return long:sub(-#short) == short
+    end
+    return true
+end
+
 -- Look up a 番号 directly via ContentPageData by probing candidate digital
 -- ids in priority order. Returns the normalized detail or nil.
+--
+-- Flow (per the amateur-content requirement):
+--   1. AV-mode candidate sweep. Any hit is checked against the requested 番号
+--      (cid and makerContentId must match); mismatches are unrelated content
+--      (e.g. "d0124" = HANY-D—029 resolving for a SMGN-124 request) and are
+--      skipped.
+--   2. When a sweep hit carries floor=AMATEUR, it is re-fetched in the 素人
+--      namespace (isAmateur=true / isAv=false) so the amateur-only fields
+--      (amateurActress etc.) are populated, then returned.
+--   3. If the whole AV sweep misses or every hit is unrelated, the raw code is
+--      probed directly in the amateur namespace (amateur digital ids equal the
+--      code itself, e.g. "SMGN-124" -> id "smgn124").
+--   4. Otherwise nil is returned and the caller falls back to javbus.
 function _M.get_by_code(code)
     if not code or code == "" then
         return nil
@@ -768,12 +878,35 @@ function _M.get_by_code(code)
     if normalized == "" then
         return nil
     end
+    local low = normalized:lower()
+
     local cands = candidate_ids(normalized)
     for _, cid in ipairs(cands) do
         local detail = _M.get(cid)
         if detail then
-            return detail
+            -- _M.get may widen the candidate internally (e.g. outer candidate
+            -- "ipx0685" actually queries "ipx00685"); the id really sent is
+            -- detail.resolved_id, so consistency must be judged against that.
+            local sent = detail.resolved_id or cid
+            if consistent(detail, sent, low) then
+                if detail.floor == "AMATEUR" then
+                    local amateur = _M.get(cid, { amateur = true })
+                    if amateur and consistent(amateur, amateur.resolved_id or cid, low) then
+                        return amateur
+                    end
+                end
+                return detail
+            end
+            ngx.log(ngx.WARN, "search " .. code .. ": cid " .. cid
+                .. " resolved to unrelated content (id=" .. tostring(detail.id)
+                .. ", makerContentId=" .. tostring(detail.makerContentId)
+                .. "), retrying as amateur")
         end
+    end
+
+    local amateur = _M.get(low, { amateur = true })
+    if amateur and consistent(amateur, low, low) then
+        return amateur
     end
     return nil
 end

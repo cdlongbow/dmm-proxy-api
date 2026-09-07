@@ -824,11 +824,12 @@ GET /api/search/:id
 **流程**
 
 1. 先查内存缓存（`search_cache`，`lua_shared_dict`，容量由 `DMM_CACHE_TOTAL` 分配、占 5%，键为 `sr:<CODE>:<offset>`），命中直接返回（TTL 6 小时）。
-2. 展开番号为候选数字版 id：`<maker>` + `%05d` / `%04d` / `%03d`，并叠加 `1`、`d_`、`h_` 前缀（去重后按优先序探测，通常第 1 个即命中）。
-3. 对每个候选调 `ContentPageData`；命中（`ppvContent` 非空）→ 归一化详情 → 构造 `works[0]`（`source="graphql"`）。全部未命中或 GraphQL 失败 → 走 **javbus 兜底**。
-4. **javbus 兜底（`source="javbus"`）**：查询 javbus 第三方 JSON API（`https://javbus-api.131433.xyz/api/movies/<番号>`，社区维护的 javbus 数据接口，返回结构化 JSON 而非 HTML），命中后解析为与前端兼容的 work 对象（旧实现直接抓 javbus.com HTML，因反爬 + 地区门控，且 javbus 自身 `/pics/` 图片会被浏览器 CORS 拦截而弃用）。javbus 来源的字段形如：`id`（=番号）、`title`、`director`（缺失 → `"未知"`）、`maker`（製作商）、`label`（發行商，数组）、`series`（系列，数组）、`genres` / `actresses`（纯字符串数组）、`sampleImages`（`smallUrl`/`largeUrl` 均取外部 CDN，如 mgstage，避免 CORS）、`cover`（javbus 图源）、`webUrl`（javbus 详情页原链）；无 `description` / `price` / `review` / `directors` 数组等 DMM 专属字段。前端按 `source` 区分渲染。
-5. 两者皆无结果 → `works` 为空（`200`）。
-6. 详情结果在 `search_cache` 以 `gc:<cid>` 键缓存（TTL 7 小时），同一数字 id 翻页/重复搜索不再请求。
+2. 展开番号为候选数字版 id：`<maker>` + `%05d` / `%04d` / `%03d`，并叠加 `1`、`d_`、`h_` 前缀（去重后按优先序探测，通常第 1 个即命中）。仅纯 `<字母><数字>` 形态的候选会被再次补零展开——带 `d_` / `h_` 前缀的候选按原样探测，避免把 `d_smgn00124` 错拆成无关的 `d0124` 造成误命中。
+3. 对每个候选调 `ContentPageData`（`isAv=true`）；命中后**校验一致性**：返回的 `id` 必须等于发出去的候选 cid，且 `makerContentId` 的 maker 与序号必须匹配请求番号（容忍 `1` / `d_` / `h_` 前缀）。校验失败的候选视为查询错误（如 `d0124`=HANY-D—029 原初是 `SMGN-124` 的错误命中），跳过。
+4. **素人（amateur）分支**：a) 若某个 AV 候选命中但 `floor=AMATEUR`，改以 `isAmateur=true`（`isAv=false`）在素人命名空间重查同一 cid，以补齐 `amateurActress` 等素人专属字段；b) 若整个 AV 候选全部未命中 / 全部失配，则以去掉连字符的原始番号（如 `SMGN-124` → id `smgn124`）在素人命名空间直查。素人命中的 `floor="AMATEUR"`，`cover` 图源为 `pics_dig/digital/amateur/<id>/`。
+5. **javbus 兜底（`source="javbus"`）**：查询 javbus 第三方 JSON API（`https://javbus-api.131433.xyz/api/movies/<番号>`，社区维护的 javbus 数据接口，返回结构化 JSON 而非 HTML），命中后解析为与前端兼容的 work 对象（旧实现直接抓 javbus.com HTML，因反爬 + 地区门控，且 javbus 自身 `/pics/` 图片会被浏览器 CORS 拦截而弃用）。javbus 来源的字段形如：`id`（=番号）、`title`、`director`（缺失 → `"未知"`）、`maker`（製作商）、`label`（發行商，数组）、`series`（系列，数组）、`genres` / `actresses`（纯字符串数组）、`sampleImages`（`smallUrl`/`largeUrl` 均取外部 CDN，如 mgstage，避免 CORS）、`cover`（javbus 图源）、`webUrl`（javbus 详情页原链）；无 `description` / `price` / `review` / `directors` 数组等 DMM 专属字段。前端按 `source` 区分渲染。
+6. 两者皆无结果 → `works` 为空（`200`）。
+7. 详情结果在 `search_cache` 以 `gc:<cid>`（AV）或 `gc:a:<cid>`（素人）键缓存（TTL 7 小时），同一数字 id 翻页/重复搜索不再请求。
 
 **示例请求**
 
@@ -913,18 +914,51 @@ Authorization: Bearer <token>
 }
 ```
 
+**素人示例响应 `200`（`source="graphql"`，`floor="AMATEUR"`）**
+
+```json
+{
+  "keyword": "SMGN-124",
+  "source": "graphql",
+  "total": 1,
+  "count": 1,
+  "hits": 1,
+  "limit": 1,
+  "offset": 0,
+  "hasNext": false,
+  "works": [
+    {
+      "id": "smgn124",
+      "makerContentId": "SMGN-124",
+      "title": "ひな＆みく",
+      "floor": "AMATEUR",
+      "duration": { "seconds": 2299, "minutes": 38 },
+      "cover": { "medium": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/amateur/smgn124/smgn124jp.jpg", "large": "" },
+      "deliveryStartAt": "2026-09-02T15:00:00Z",
+      "deliveryStartDate": "2026-09-02T15:00:00Z",
+      "actresses": [{ "id": "smgn124", "name": "ひな＆みく", "imageUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/amateur/smgn124/smgn124jp.jpg" }],
+      "maker": { "id": "312269", "name": "素人ムクムク-ゲノム-" },
+      "label": [{ "id": "2067646", "name": "素人ムクムク-ゲノム-" }],
+      "genres": [{ "id": "4005", "name": "乱交" }, { "id": "1031", "name": "痴女" }],
+      "review": { "average": 0, "count": 0 },
+      "price": { "price": 1280, "listPrice": 1280, "salePrice": 0 }
+    }
+  ]
+}
+```
+
 **响应字段**
 
 | 字段 | 说明 |
 |------|------|
 | `keyword` | 规范化番号（大写、去空白） |
-| `source` | `graphql`（DMM 数字版）或 `javbus`（兜底） |
+| `source` | `graphql`（DMM 数字版，含素人）或 `javbus`（兜底） |
 | `total` / `count` | 命中数（0 或 1） |
-| `works[].id` | 数字版 content id（如 `ipx00685`，用作「配信品番」） |
-| `works[].makerContentId` | メーカー品番（如 `SSIS-666`） |
+| `works[].id` | 数字版 content id（如 `ipx00685`；素人为番号本体如 `smgn124`，用作「配信品番」） |
+| `works[].makerContentId` | メーカー品番（如 `SSIS-666`、`SMGN-124`） |
 | `works[].title` | 作品标题 |
-| `works[].description` | 内容简介 |
-| `works[].floor` | 分类（`AV` 等） |
+| `works[].description` | 内容简介（素人可能为空） |
+| `works[].floor` | 分类（`AV` / `AMATEUR`（素人）/ `javbus`） |
 | `works[].contentType` | 内容类型（`TWO_DIMENSION` / VR 等） |
 | `works[].cover.medium` / `cover.large` | 封面直链 |
 | `works[].duration` | `{ seconds, minutes }` 收録时长 |
@@ -932,7 +966,7 @@ Authorization: Bearer <token>
 | `works[].makerReleasedAt` | 商品発売日（ISO 8601，JST +9h） |
 | `works[].saleEndAt` | 促销截止时间（可空） |
 | `works[].wishlistCount` | 收藏/加入愿望单数量 |
-| `works[].actresses` | 出演者列表（含 `nameRuby` / 三围 / `contentCount` 等） |
+| `works[].actresses` | 出演者列表（含 `nameRuby` / 三围 / `contentCount` 等）；素人作品取自 `amateurActress` |
 | `works[].directors` | 監督列表 `[{id, name}]` |
 | `works[].series` | 系列列表 `[{id, name}]` |
 | `works[].maker` | メーカー `{id, name}` |

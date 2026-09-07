@@ -22,6 +22,7 @@
 - **多配色主题**：6 套小清新配色方案（薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑），一键切换，自动保存
 - **中英双语**：界面支持中文 / English 切换，自动保存偏好
 - **智能 CID 探测**：番号（如 `ABP-477`）自动转成 DMM 内部多个候选 CID（如 `abp00477`、`abp0477`、`1abp477`）逐一探测，命中第一个可用项
+- **素人（amateur）番号支持**：`SMGN-124` 等素人作品（数字 id 即番号本体）经 `isAmateur=true / isAv=false` 命名空间直查命中（`floor="AMATEUR"`，出演者取自 `amateurActress`）；AV 候选命中后校验「发出的 cid / makerContentId」与请求番号一致，不一致即视为查询错误（如 `d0124`=HANY-D—029 不会误当 `SMGN-124`），避免素人番号错命中他人的作品
 - **快速存在性探测**：用 `Range: bytes=0-1023` 请求，接受 `200/206/416`，探测预告片由 37s 降到约 1s
 - **流式视频代理**：`/proxy/video/*` 支持 HTTP Range，可在播放器内拖动进度条；自动带浏览器 UA 与 DMM 的 `Referer` 避免 CDN 403
 - **可选 HTTPS (SSL)**：证书目录存在即自动启用 443；无证书则纯 HTTP，开箱即用
@@ -450,7 +451,7 @@ GET /api/search/:id
 Authorization: Bearer <token>
 ```
 
-通过番号直接检索 DMM 数字版作品，**不依赖 affiliate appid**：番号（大小写不敏感、忽略连字符）展开为候选数字版 content id（`<maker>` + 补零序号，含 `1`/`d_`/`h_` 前缀），逐个用 video.dmm.co.jp 的 GraphQL `ContentPageData` 探测（`lua/api_content.lua`），首个命中即返回**完整详情**（简介 / 时长 / 監督 / 类型 / 剧照 / 预告 / 价格等，见 api.md §4.6）。DMM 未命中时自动用 **javbus JSON API 兜底**（`lua/api_javbus.lua`，`https://javbus-api.131433.xyz/api/movies/<番号>`，返回 識別碼 / 發行日期 / 長度 / 導演 / 製作商 / 發行商 / 系列 / 類別 / 演員 / 樣品圖像 等；导演缺失时为「未知」；样图用外部 CDN 链接避免 CORS 拦截；`source="javbus"`）。前端按 `source` 分支渲染：javbus 来源字段为纯字符串/字符串数组，DMM 来源为 `{id,name}` 对象数组；javbus 域封面被浏览器拦截时以内置占位图替代。结果按番号缓存 **6 小时**（`lua_shared_dict search_cache`，占 `DMM_CACHE_TOTAL` 的 5%），详情再以 `gc:<cid>` 缓存 7 小时。
+通过番号直接检索 DMM 数字版作品，**不依赖 affiliate appid**：番号（大小写不敏感、忽略连字符）展开为候选数字版 content id（`<maker>` + 补零序号，含 `1`/`d_`/`h_` 前缀），逐个用 video.dmm.co.jp 的 GraphQL `ContentPageData` 探测（`lua/api_content.lua`），首个命中即返回**完整详情**（简介 / 时长 / 監督 / 类型 / 剧照 / 预告 / 价格等，见 api.md §4.6）。候选命中后校验「发出的 cid / makerContentId」与请求番号一致，防止补零候选误命中他人作品；素人番号（如 `SMGN-124`，数字 id 即番号本体）在 AV 候选命中但 `floor=AMATEUR` 时改用 `isAmateur=true / isAv=false` 重查以补齐 `amateurActress`，AV 候选全部失配时也以原始番号直查素人命名空间（`floor="AMATEUR"`）。DMM 未命中时自动用 **javbus JSON API 兜底**（`lua/api_javbus.lua`，`https://javbus-api.131433.xyz/api/movies/<番号>`，返回 識別碼 / 發行日期 / 長度 / 導演 / 製作商 / 發行商 / 系列 / 類別 / 演員 / 樣品圖像 等；导演缺失时为「未知」；样图用外部 CDN 链接避免 CORS 拦截；`source="javbus"`）。前端按 `source` 分支渲染：javbus 来源字段为纯字符串/字符串数组，DMM 来源为 `{id,name}` 对象数组；javbus 域封面被浏览器拦截时以内置占位图替代。结果按番号缓存 **6 小时**（`lua_shared_dict search_cache`，占 `DMM_CACHE_TOTAL` 的 5%），详情再以 `gc:<cid>`（AV）/ `gc:a:<cid>`（素人）缓存 7 小时。
 
 ```http
 # 小写番号也能搜（上游统一大写）
