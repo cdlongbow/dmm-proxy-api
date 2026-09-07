@@ -1,6 +1,6 @@
 -- /api/magnet/:id - magnet link aggregation from three independent sources:
 --   * sukebei.nyaa.si  (RSS feed, magnet rebuilt from <nyaa:infoHash>)
---   * javdb.com        (search -> video detail page magnet table)
+--   * javdb.com        (official app JSON API first, web scrape as fallback)
 --   * javbus.com       (search -> detail gid/uc -> ajax magnet table)
 --
 -- The three sources are fetched concurrently (ngx.thread) and results are
@@ -37,6 +37,24 @@ local ACCEPT_LANG = "zh-CN,zh;q=0.9,zh-TW;q=0.8,en-US;q=0.7,en;q=0.6,ja;q=0.5"
 local SUKEBEI = "https://sukebei.nyaa.si"
 local JAVDB = "https://javdb.com"
 local JAVBUS = "https://www.javbus.com"
+
+-- JavDB official app API. Unlike the javdb.com web pages this backend is not
+-- Cloudflare/geo-blocked, so it keeps working from Japan-hosted containers.
+-- Search + magnets need no login; only the jdsignature header and the fixed
+-- app query params are required.
+local JAVDB_APP = "https://jdforrepam.com"
+local JAVDB_APP_UA = "Mozilla/5.0 (Linux; Android 13; javdb)"
+-- Signature constants (extracted from the official APK; fixed, MD5 over
+-- current unix time + STR1, header format "<ts>.<STR2>.<md5>").
+local JAVDB_APP_STR1 = "71cf27bb3c0bcdf207b64abecddc970098c7421ee7203b9cdae54478478a199e7d5a6e1a57691123c1a931c057842fb73ba3b3c83bcd69c17ccf174081e3d8aa"
+local JAVDB_APP_STR2 = "lpw6vgqzsp"
+local JAVDB_APP_QUERY = {
+    platform = "android",
+    app_channel = "official",
+    app_version = "official",
+    app_version_number = "1.9.35",
+    system_version = "13",
+}
 
 -- Trackers nyaa.si / sukebei bake into the magnet URIs it generates; they are
 -- re-added here because the RSS feed only carries the info hash.
@@ -152,6 +170,33 @@ local function normalize_hash(h)
     return string.lower(hex)
 end
 
+-- Per-request jdsignature for the JavDB app API.
+local function javdb_app_signature()
+    local ts = tostring(ngx.time())
+    return ts .. "." .. JAVDB_APP_STR2 .. "." .. ngx.md5(ts .. JAVDB_APP_STR1)
+end
+
+-- Normalise a movie number for comparison (upper, strip dashes/spaces).
+local function norm_number(s)
+    return string.upper(s or ""):gsub("[-%s]+", "")
+end
+
+-- Pretty-print a byte count the way javdb web does (e.g. "5.2 GB").
+local function fmt_bytes(n)
+    n = tonumber(n)
+    if not n then
+        return ""
+    end
+    local units = { "B", "KB", "MB", "GB", "TB", "PB" }
+    local u = 1
+    while n >= 1024 and u < #units do
+        n = n / 1024
+        u = u + 1
+    end
+    local out = n == math.floor(n) and string.format("%.0f", n) or string.format("%.1f", n)
+    return out .. " " .. units[u]
+end
+
 -------------------------------------------------------------------------------
 -- Source 1: sukebei.nyaa.si (RSS)
 -------------------------------------------------------------------------------
@@ -194,7 +239,7 @@ local function fetch_sukebei(code)
 end
 
 -------------------------------------------------------------------------------
--- Source 2: javdb.com
+-- Source 2: javdb (official app JSON API, web scrape fallback)
 -------------------------------------------------------------------------------
 
 -- Find the nearest '<a ' open tag strictly before `before` whose attributes
@@ -294,7 +339,114 @@ function _M.parse_javdb_detail(html, detail_url)
     return magnets
 end
 
-local function fetch_javdb(code)
+-- App API: return the vid of the movie whose number matches `code` exactly.
+function _M.parse_javdb_app_search(data, code)
+    local movies = (data or {}).movies
+    if type(movies) ~= "table" then
+        return nil
+    end
+    local want = norm_number(code)
+    for _, m in ipairs(movies) do
+        if type(m) == "table" and norm_number(m.number) == want then
+            return m.id
+        end
+    end
+    return nil
+end
+
+-- App API: map the magnet list onto the shared magnet row schema.
+function _M.parse_javdb_app_magnets(data)
+    local magnets = {}
+    local list = (data and data.magnets) or {}
+    if type(list) ~= "table" then
+        return magnets
+    end
+    for _, m in ipairs(list) do
+        local hash = normalize_hash(m.hash)
+        if hash then
+            local magnet = "magnet:?xt=urn:btih:" .. hash
+            if m.name and m.name ~= "" then
+                magnet = magnet .. "&dn=" .. ngx.escape_uri(m.name)
+            end
+            local tags = {}
+            if m.cnsub then
+                tags[#tags + 1] = "中字"
+            end
+            if m.hd then
+                tags[#tags + 1] = "高清"
+            end
+            magnets[#magnets + 1] = {
+                name = m.name or "",
+                magnet = magnet,
+                info_hash = hash,
+                size = fmt_bytes(m.size),
+                size_bytes = tonumber(m.size) or 0,
+                date = m.created_at or "",
+                date_str = m.created_at or "",
+                files = tonumber(m.files_count) or 0,
+                tags = tags,
+            }
+        end
+    end
+    return magnets
+end
+
+local function fetch_javdb_app(code)
+    local q = {}
+    for k, v in pairs(JAVDB_APP_QUERY) do
+        q[k] = v
+    end
+    q.q = code
+    q.page = "1"
+    q.type = "movie"
+    q.movie_sort_by = "release"
+    q.movie_filter_by = "all"
+    q.limit = "10"
+    local search_url = JAVDB_APP .. "/api/v2/search?" .. ngx.encode_args(q)
+    local res, err = get(search_url, {
+        ["User-Agent"] = JAVDB_APP_UA,
+        ["jdsignature"] = javdb_app_signature(),
+        ["Accept-Language"] = ACCEPT_LANG,
+    })
+    if not res or res.status ~= 200 then
+        ngx.log(ngx.ERR, "javdb app search status=" .. (res and res.status or "nil") .. " err=" .. tostring(err))
+        return nil, "javdb app search failed"
+    end
+    local ok, data = pcall(cjson.decode, res.body)
+    if not ok or not data or data.success ~= 1 then
+        ngx.log(ngx.ERR, "javdb app search bad payload")
+        return nil, "javdb app search failed"
+    end
+    local vid = _M.parse_javdb_app_search(data.data, code)
+    if not vid then
+        ngx.log(ngx.ERR, "javdb app no exact match for " .. code)
+        return nil, "javdb app: no exact match"
+    end
+
+    local q2 = {}
+    for k, v in pairs(JAVDB_APP_QUERY) do
+        q2[k] = v
+    end
+    local magnets_url = JAVDB_APP .. "/api/v1/movies/" .. vid .. "/magnets?" .. ngx.encode_args(q2)
+    local res2, err2 = get(magnets_url, {
+        ["User-Agent"] = JAVDB_APP_UA,
+        ["jdsignature"] = javdb_app_signature(),
+        ["Accept-Language"] = ACCEPT_LANG,
+    })
+    if not res2 or res2.status ~= 200 then
+        ngx.log(ngx.ERR, "javdb app magnets status=" .. (res2 and res2.status or "nil") .. " err=" .. tostring(err2))
+        return nil, "javdb app magnets failed"
+    end
+    local ok2, data2 = pcall(cjson.decode, res2.body)
+    if not ok2 or not data2 or data2.success ~= 1 then
+        ngx.log(ngx.ERR, "javdb app magnets bad payload")
+        return nil, "javdb app magnets failed"
+    end
+    return _M.parse_javdb_app_magnets(data2.data)
+end
+
+-- Web fallback used when the app API is unreachable or has no match.
+local function fetch_javdb_web(code)
     -- 1. Search for the exact code.
     local search_url = JAVDB .. "/search?q=" .. ngx.escape_uri(code) .. "&f=all"
     local res, err = get(search_url, {
@@ -322,6 +474,15 @@ local function fetch_javdb(code)
         return nil, "javdb detail failed"
     end
     return _M.parse_javdb_detail(res2.body, detail_url)
+end
+
+local function fetch_javdb(code)
+    local magnets, err = fetch_javdb_app(code)
+    if magnets then
+        return magnets
+    end
+    ngx.log(ngx.ERR, "javdb app failed (" .. tostring(err) .. "), falling back to web scrape")
+    return fetch_javdb_web(code)
 end
 
 -------------------------------------------------------------------------------
@@ -552,6 +713,8 @@ end
 -- Exposed for the offline test harness (luajit, no OpenResty).
 _M.fetch_sukebei = fetch_sukebei
 _M.fetch_javdb = fetch_javdb
+_M.fetch_javdb_web = fetch_javdb_web
+_M.fetch_javdb_app = fetch_javdb_app
 _M.fetch_javbus = fetch_javbus
 
 return _M
