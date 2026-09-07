@@ -2081,14 +2081,16 @@ function renderSearchItem(w, i, source) {
   // path returns {name} objects. Branch on source so each format is handled
   // explicitly and stays easy to maintain.
   const isJavbus = String(source || '').toLowerCase() === 'javbus';
+  const isMgs    = String(source || '').toLowerCase() === 'mgs';
   const s = x => (Array.isArray(x) ? x.join(' / ') : (x || ''));
   const arr = x => (Array.isArray(x) ? x : []);
 
   let actors = '', directors = '', series = '', labels = [], genres = [];
   let maker = '', labelStr = '', genreStr = '';
 
-  if (isJavbus) {
-    // javbus: plain strings / string arrays, single-value `director` (may be '未知').
+  if (isJavbus || isMgs) {
+    // javbus / mgs: plain strings / string arrays, single-value `director`
+    // (may be '未知'). MGS adds extra metadata in w.mgs.
     actors    = s(w.actresses);
     directors = s(w.director && w.director !== '未知' ? w.director : '');
     series    = s(w.series);
@@ -2132,8 +2134,8 @@ function renderSearchItem(w, i, source) {
     : (w.cover.medium || w.cover.large || PLACEHOLDER_COVER || '');
   const priceTag = (w.price && w.price.price > 0)
     ? `<span class="sr-price-tag">${w.price.price.toLocaleString('ja-JP')}円</span>` : '';
-  const rating = w.review && w.review.count
-    ? `★ ${w.review.average} ・ ${w.review.count}${t('sr_reviews')}` : '';
+  const rating = (w.review || (isMgs ? w.mgs : null)) && ((w.review || w.mgs).count || 0) > 0
+    ? `★ ${(w.review || w.mgs).average} ・ ${(w.review || w.mgs).count}${t('sr_reviews')}` : '';
   const meta =
     mchip(rating, 'rate', t('sr_review'));
   const desc = w.description
@@ -2145,33 +2147,31 @@ function renderSearchItem(w, i, source) {
       title="${escAttr(t('sr_thumbs_zoom'))}">`
   ).join('');
 
-  const detailsRows = isJavbus
-    ? (
-        `${row('sr_delivery', delivery)}` +
-        `${row('sr_released', released)}` +
-        `${row('sr_duration', dur)}` +
-        `${row('sr_actresses', actors)}` +
-        `${row('sr_directors', directors)}` +
-        `${row('sr_series', series)}` +
-        `${row('sr_maker', maker)}` +
-        `${row('sr_label', labelStr)}` +
-        `${row('sr_genres', genreStr)}` +
-        `${row('sr_dist_code', distCode ? escHtml(distCode) : '')}`
-      )
-    : (
-        `${row('sr_delivery', delivery)}` +
-        `${row('sr_released', released)}` +
-        `${row('sr_duration', dur)}` +
-        `${row('sr_actresses', actors)}` +
-        `${row('sr_directors', directors)}` +
-        `${row('sr_series', series)}` +
-        `${row('sr_maker', maker)}` +
-        `${row('sr_label', chips(labels))}` +
-        `${row('sr_genres', chips(genres))}` +
-        `${row('sr_tags', chips(arr(w.relatedTags).map(x => x && x.name ? x.name : x).filter(Boolean)))}` +
-        `${row('sr_dist_code', distCode ? escHtml(distCode) : '')}` +
-        `${row('sr_maker_code', mkCode ? escHtml(mkCode) : '')}`
-      );
+  const detailsRows = (() => {
+    let rows = `${row('sr_delivery', delivery)}` +
+               `${row('sr_released', released)}`;
+    rows += `${row('sr_duration', dur)}` +
+            `${row('sr_actresses', actors)}` +
+            `${row('sr_directors', directors)}` +
+            `${row('sr_series', series)}` +
+            `${row('sr_maker', maker)}`;
+    if (isJavbus) {
+      rows += `${row('sr_label', labelStr)}` +
+              `${row('sr_genres', genreStr)}` +
+              `${row('sr_dist_code', distCode ? escHtml(distCode) : '')}`;
+    } else if (isMgs) {
+      rows += `${row('sr_label', labelStr)}` +
+              `${row('sr_genres', genreStr)}` +
+              `${row('sr_dist_code', distCode ? escHtml(distCode) : '')}`;
+    } else {
+      rows += `${row('sr_label', chips(labels))}` +
+              `${row('sr_genres', chips(genres))}` +
+              `${row('sr_tags', chips(arr(w.relatedTags).map(x => x && x.name ? x.name : x).filter(Boolean)))}` +
+              `${row('sr_dist_code', distCode ? escHtml(distCode) : '')}` +
+              `${row('sr_maker_code', mkCode ? escHtml(mkCode) : '')}`;
+    }
+    return rows;
+  })();
 
   return `
   <div class="search-result fade-in" style="animation-delay:${i * 30}ms">

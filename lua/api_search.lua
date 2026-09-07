@@ -134,21 +134,33 @@ function _M.handle(raw_id)
             return
         end
 
-        local detail = content.get_by_code(code)
+        local mgs = require "api_mgs"
 
         local works = {}
         local source = "graphql"
-        if detail then
-            works[1] = work_from_detail(detail)
-        else
-            -- FANZA GraphQL found nothing -> javbus detail page as fallback.
-            local javbus = require "api_javbus"
-            local jdet, jerr = javbus.fetch(code)
-            if jdet then
-                works[1] = jdet
-                source = "javbus"
+        if mgs.is_mgs(code) then
+            -- MGS 番号 goes straight to mgstage.com (not through FANZA/javbus).
+            local mdet, merr = mgs.fetch(code)
+            if mdet then
+                works[1] = mdet
+                source = "mgs"
             else
-                ngx.log(ngx.ERR, "search " .. code .. ": javbus fallback failed: " .. tostring(jerr))
+                ngx.log(ngx.ERR, "search " .. code .. ": mgs fetch failed: " .. tostring(merr))
+            end
+        else
+            local detail = content.get_by_code(code)
+            if detail then
+                works[1] = work_from_detail(detail)
+            else
+                -- FANZA GraphQL found nothing -> javbus detail page as fallback.
+                local javbus = require "api_javbus"
+                local jdet, jerr = javbus.fetch(code)
+                if jdet then
+                    works[1] = jdet
+                    source = "javbus"
+                else
+                    ngx.log(ngx.ERR, "search " .. code .. ": javbus fallback failed: " .. tostring(jerr))
+                end
             end
         end
 
