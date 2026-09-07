@@ -9,3 +9,6 @@ logs/
 
 # SSL certs (never commit private keys)
 certs/
+
+# JetBrains IDE workspace
+.idea/
