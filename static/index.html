@@ -2231,11 +2231,11 @@ function getRecentDates() {
   }
   return { dates, todayStr };
 }
-const DATES = getRecentDates().dates;
+let DATES = getRecentDates().dates;
 const TODAY = getRecentDates().todayStr;
 
 // ========== Timeline ==========
-function renderTimeline() {
+function renderTrack() {
   const track = document.getElementById('timeline-track');
   track.innerHTML = '';
   DATES.forEach((d, i) => {
@@ -2248,6 +2248,10 @@ function renderTimeline() {
     day.onclick = () => selectDate(i);
     track.appendChild(day);
   });
+}
+
+function renderTimeline() {
+  renderTrack();
   scrollToActive();
 }
 
@@ -2259,8 +2263,44 @@ function scrollToActive() {
   }
 }
 
-// drag-to-scroll
+// drag-to-scroll + forceful-fling to reveal earlier months
 let dragStartX = 0, dragScrollLeft = 0, dragging = false, dragged = false;
+let lastMoveX = 0, lastMoveT = 0, flingV = 0, peakOverscroll = 0;
+const FLING_V         = 0.6;   // px/ms – minimum velocity to trigger extend
+const OVERSCROLL_PX   = 60;    // pulling past the left edge by this much triggers extend
+const EXTEND_DAYS     = 30;    // days prepended per fling (≈ one month)
+const MAX_BACK_DAYS   = 365;   // hard cap: never go back more than one year
+
+function extendTimelineBack() {
+  const track = document.getElementById('timeline-track');
+  const oldest = DATES[0];
+  if (!oldest || !track.firstElementChild) return false;
+  const daysBack = Math.floor((new Date(TODAY + 'T00:00:00') - new Date(oldest + 'T00:00:00')) / 86400000);
+  if (daysBack + 1 >= MAX_BACK_DAYS) return false;
+  const add = Math.min(EXTEND_DAYS, MAX_BACK_DAYS - (daysBack + 1));
+  if (add <= 0) return false;
+
+  const added = [];
+  const base = new Date(oldest + 'T00:00:00').getTime();
+  for (let i = 1; i <= add; i++) {
+    added.push(fmtDate(new Date(base - i * 86400000)));
+  }
+  added.reverse(); // chronological, all strictly older than `oldest`
+
+  const oldScrollLeft = track.scrollLeft;
+  const step = track.firstElementChild.offsetWidth +
+    (parseFloat(getComputedStyle(track).gap) || 0);
+  DATES = added.concat(DATES);
+  currentDateIdx += added.length;
+
+  // Prevent scroll-behavior:smooth from animating the scrollLeft adjustment
+  track.style.scrollBehavior = 'auto';
+  renderTrack();
+  track.scrollLeft = oldScrollLeft + added.length * step;
+  track.style.scrollBehavior = '';
+  return true;
+}
+
 function initDrag() {
   const track = document.getElementById('timeline-track');
   track.addEventListener('pointerdown', e => {
@@ -2268,17 +2308,59 @@ function initDrag() {
     dragged = false;
     dragStartX = e.clientX;
     dragScrollLeft = track.scrollLeft;
+    lastMoveX = e.clientX;
+    lastMoveT = performance.now();
+    flingV = 0;
+    peakOverscroll = 0;
+    track.style.transform = '';
   });
   window.addEventListener('pointermove', e => {
     if (!dragging) return;
     const dx = e.clientX - dragStartX;
+    const maxScroll = track.scrollWidth - track.clientWidth;
+    let overscroll = 0;
     if (Math.abs(dx) > 5) {
       dragged = true;
-      track.scrollLeft = dragScrollLeft - dx;
+      const requested = dragScrollLeft - dx;
+      if (requested < 0) {
+        // pulled past the left edge – clamp and record the overscroll (peak)
+        track.scrollLeft = 0;
+        overscroll = -requested;
+      } else {
+        track.scrollLeft = Math.min(requested, maxScroll);
+      }
+      if (overscroll > peakOverscroll) peakOverscroll = overscroll;
+      // rubber-band visual: shift the dates right while pulling past the edge
+      const tx = peakOverscroll > 0 ? Math.min(peakOverscroll, 90) * 0.35 : 0;
+      track.style.transform = `translateX(${tx}px)`;
     }
+    const t = performance.now();
+    const dPx = e.clientX - lastMoveX;
+    const dT  = Math.max(t - lastMoveT, 1);
+    flingV = dPx / dT;
+    lastMoveX = e.clientX;
+    lastMoveT = t;
   });
-  window.addEventListener('pointerup', () => { dragging = false; });
-  window.addEventListener('pointercancel', () => { dragging = false; });
+  const maybeFling = () => {
+    // extend when (a) the release was a fast rightward fling at the oldest
+    // edge, or (b) the user slowly pulled past the left edge (overscroll)
+    // by a good margin – both mean "show me an earlier month".
+    const atEdge = track.scrollLeft <= 1;
+    if (dragged && atEdge &&
+        (flingV > FLING_V || peakOverscroll >= OVERSCROLL_PX)) {
+      extendTimelineBack();
+    }
+    track.style.transform = '';
+    dragScrollLeft = 0;
+    lastMoveX = 0;
+    lastMoveT = 0;
+    peakOverscroll = 0;
+    dragging = false;
+    dragged  = false;
+    flingV   = 0;
+  };
+  window.addEventListener('pointerup', maybeFling);
+  window.addEventListener('pointercancel', maybeFling);
 
   // suppress the click that follows a real drag, so day selection still works
   track.addEventListener('click', e => {
