@@ -948,6 +948,108 @@
     padding: 0 8px;
   }
 
+  /* ---- favorites toolbar ---- */
+  .fav-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+  .fav-toolbar input[type="text"] {
+    flex: 1 1 190px;
+    min-width: 150px;
+    padding: 7px 12px;
+    border-radius: 9px;
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .fav-toolbar input[type="text"]:focus { border-color: var(--primary); }
+  .fav-tool-btn {
+    padding: 6px 13px;
+    border-radius: 10px;
+    border: 1.5px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all .2s;
+    white-space: nowrap;
+  }
+  .fav-tool-btn:hover { border-color: var(--primary); color: var(--primary-dark); }
+  .fav-tool-btn.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+  .fav-tool-btn.danger { color: #c04949; border-color: #e2b6b6; }
+  .fav-tool-btn.danger:hover { border-color: #c04949; color: #c04949; }
+  #fav-batch-del { display: none; }
+  .fav-tool-btn.danger.show { display: inline-block; }
+  .fav-tool-btn.danger:disabled { opacity: .45; cursor: not-allowed; }
+  .fav-chk-all {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+    user-select: none;
+  }
+  .fav-toolbar.batch .fav-chk-all { display: inline-flex; }
+  .fav-chk-all input { accent-color: var(--primary); }
+
+  /* ---- favorites card overlay (checkbox + remove) ---- */
+  .fav-card { position: relative; }
+  .fav-card-tools {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 3;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+  .fav-card-tools > * { pointer-events: auto; }
+  .fav-chk {
+    display: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.92);
+    box-shadow: 0 1px 5px rgba(0,0,0,.18);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .fav-chk input { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+  .fav-toolbar.batch ~ .cards .fav-chk,
+  .fav-toolbar.batch .fav-chk { display: flex; }
+  .fav-del {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,.55);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 1px 5px rgba(0,0,0,.25);
+    transition: background .2s, transform .2s;
+  }
+  .fav-del:hover { background: #c04949; transform: scale(1.08); }
+
   /* ---- loading / empty ---- */
   .status-msg {
     grid-column: 1 / -1;
@@ -1144,6 +1246,20 @@
     background: var(--primary);
     color: #fff;
     border-color: var(--primary);
+  }
+  /* favorite heart button: fills with the active theme's primary color */
+  .action-btn.fav-btn.active {
+    background: transparent;
+    color: var(--primary-dark);
+    border-color: var(--primary-light);
+    border-width: 1.5px;
+  }
+  .action-btn.fav-btn .action-ico {
+    font-size: 13px;
+    line-height: 1.2;
+  }
+  .action-btn.fav-btn.active .action-ico {
+    color: var(--primary-dark);
   }
   .action-btn:disabled {
     opacity: .45;
@@ -1540,6 +1656,10 @@
     </div>
   </div>
   <div class="settings-bar">
+    <button class="settings-btn" id="btn-favs" onclick="showFavorites()" title="我的收藏">
+      <span class="icon" id="favs-icon">♥</span>
+      <span id="favs-label" data-i18n="fav_title">我的收藏</span>
+    </button>
     <button class="settings-btn" id="btn-browse" onclick="toggleBrowseMode()" title="浏览模式">
       <span class="icon" id="browse-icon">👀</span>
       <span id="browse-label">随便看</span>
@@ -1583,6 +1703,16 @@
   <div class="content-header">
     <span class="content-title" id="content-title">Loading...</span>
     <span class="content-count" id="content-count"></span>
+  </div>
+  <div class="fav-toolbar" id="fav-toolbar" style="display:none">
+    <input type="text" id="fav-search-input" placeholder="搜索标题 / 演员 / 番号" autocomplete="off" spellcheck="false" oninput="favSearch(this.value)">
+    <button class="fav-tool-btn" onclick="favImportTrigger()" data-i18n="fav_import">导入</button>
+    <input type="file" id="fav-import-file" accept="application/json,.json" style="display:none" onchange="favImportFile(this)">
+    <button class="fav-tool-btn" id="fav-export" onclick="favExport()" data-i18n="fav_export">导出</button>
+    <button class="fav-tool-btn danger" onclick="favClearAll()" data-i18n="fav_clear">清空</button>
+    <button class="fav-tool-btn" id="fav-batch" onclick="favToggleBatch()" data-i18n="fav_batch">批量删除</button>
+    <label class="fav-chk-all" id="fav-chk-all"><input type="checkbox" onchange="favToggleSelectPage(this.checked)"><span data-i18n="fav_select_all_page">全选本页</span></label>
+    <button class="fav-tool-btn danger" id="fav-batch-del" onclick="favDeleteSelected()" disabled></button>
   </div>
   <div class="cards" id="cards"></div>
   <div class="pagination" id="pagination"></div>
@@ -1634,6 +1764,9 @@
       </div>
       <span class="modal-badge" id="modal-badge"></span>
       <div class="action-bar">
+        <button class="action-btn fav-btn" id="btn-fav" onclick="toggleFav()" disabled>
+          <span class="action-ico">♡</span><span class="action-lbl" data-i18n="fav_btn">收藏</span>
+        </button>
         <button class="action-btn" id="btn-magnet" onclick="toggleAction('magnet')" disabled>
           <span class="action-ico">🧲</span><span class="action-lbl" data-i18n="magnet_btn">磁力链接</span>
         </button>
@@ -1703,6 +1836,26 @@ const I18N = {
     no_data: '暂无数据',
     cover: '封面',
     sample: '样片',
+    fav_btn: '收藏',
+    fav_saved: '已收藏',
+    fav_removed: '已取消收藏',
+    fav_title: '我的收藏',
+    subtitle_fav: '收藏的作品',
+    no_fav: '还没有收藏任何作品',
+    fav_nofav: '♥ 未收藏',
+    fav_search_ph: '搜索标题 / 演员 / 番号',
+    fav_import: '导入',
+    fav_export: '导出',
+    fav_clear: '清空',
+    fav_batch: '批量删除',
+    fav_del_selected: '删除所选',
+    fav_del_one: '删除该收藏',
+    fav_clear_confirm: '确认清空全部收藏？此操作不可恢复。',
+    fav_import_ok: '成功导入 %d 条收藏',
+    fav_import_fail: '导入失败：文件格式不正确',
+    fav_import_empty: '文件中没有有效的收藏数据',
+    fav_no_match: '没有匹配的收藏',
+    fav_select_all_page: '全选本页',
     magnet_btn: '磁力链接',
     play_btn: '跳转播放',
     fetching: '加载中…',
@@ -1769,6 +1922,26 @@ const I18N = {
     no_data: 'No data available',
     cover: 'Cover',
     sample: 'Sample',
+    fav_btn: 'Favorite',
+    fav_saved: 'Saved',
+    fav_removed: 'Removed',
+    fav_title: 'My Favorites',
+    subtitle_fav: 'Favorite works',
+    no_fav: 'No favorites yet',
+    fav_nofav: '♥ Not saved',
+    fav_search_ph: 'Search title / actress / code',
+    fav_import: 'Import',
+    fav_export: 'Export',
+    fav_clear: 'Clear',
+    fav_batch: 'Batch delete',
+    fav_del_selected: 'Delete selected',
+    fav_del_one: 'Remove favorite',
+    fav_clear_confirm: 'Clear all favorites? This cannot be undone.',
+    fav_import_ok: 'Imported %d favorites',
+    fav_import_fail: 'Import failed: invalid file',
+    fav_import_empty: 'No valid favorites in file',
+    fav_no_match: 'No matching favorites',
+    fav_select_all_page: 'Select all on page',
     magnet_btn: 'Magnet',
     play_btn: 'Watch',
     fetching: 'Loading…',
@@ -1826,6 +1999,8 @@ function applyLang() {
     el.textContent = t(key);
   });
   document.getElementById('search-input').placeholder = t('search_place');
+  const favSearchInput = document.getElementById('fav-search-input');
+  if (favSearchInput) favSearchInput.placeholder = t('fav_search_ph');
   updateSubtitle();
   renderThemeDropdown();
   loadCurrentData();
@@ -2124,7 +2299,7 @@ function renderSearchItem(w, i, source) {
 
   const distCode = w.id || '';
   const mkCode = w.makerContentId && w.makerContentId !== w.id ? w.makerContentId : '';
-  const imgs = { images: w.images || [], title: w.title || '', code: mkCode || distCode, date: delivery };
+  const imgs = { images: w.images || [], title: w.title || '', code: mkCode || distCode, date: delivery, actresses: actors };
 
   // javbus covers live on www.javbus.com/pics/... which browsers block (CORS /
   // hotlink protection). Show a local placeholder instead so the card doesn't
@@ -2136,6 +2311,7 @@ function renderSearchItem(w, i, source) {
   const coverUrl = javbusCover
     ? PLACEHOLDER_COVER
     : (w.cover.medium || w.cover.large || PLACEHOLDER_COVER || '');
+  imgs.coverUrl = coverUrl;
   const priceTag = (w.price && w.price.price > 0)
     ? `<span class="sr-price-tag">${w.price.price.toLocaleString('ja-JP')}円</span>` : '';
   const rating = (w.review || (isMgs ? w.mgs : null)) && ((w.review || w.mgs).count || 0) > 0
@@ -2488,7 +2664,9 @@ function parseDateInput(s) {
 }
 
 // ========== Modal ==========
+let currentModalWork = null;
 function openModal(work, idx) {
+  currentModalWork = work || null;
   modalImages = work.images || [];
   if (modalImages.length === 0) return;
   modalIdx = (typeof idx === 'number' && idx >= 0 && idx < modalImages.length) ? idx : 0;
@@ -2553,6 +2731,7 @@ function updateActionButtons() {
   const dis = !currentCode;
   document.getElementById('btn-magnet').disabled = dis;
   document.getElementById('btn-play').disabled = dis;
+  refreshFavButton();
 }
 
 function closePopover() {
@@ -2827,6 +3006,408 @@ async function loadFindplay() {
   }
 }
 
+// ========== Favorites (IndexedDB) ==========
+// Stored in IndexedDB (`works` store, keyPath=番号 code) as self-contained
+// records: title/code/date/actresses for search, cover + images URLs so the
+// modal can be reopened and the grid can show a thumbnail. Only URLs are kept,
+// never image bytes. A read cache (`favorites`) mirrors the store for cheap
+// search/filter/pagination; every mutation writes through to IndexedDB.
+const FAV_DB_NAME = 'dm9_favs_db';
+const FAV_DB_VERSION = 1;
+const FAV_STORE = 'works';
+const FAV_LEGACY_KEY = 'dm9_favs'; // pre-IndexedDB localStorage key, migrated once
+const FAV_PAGE_SIZE = 20;
+
+let favorites = [];          // full cache, newest first
+let favLoaded = false;       // IDB opened + cache populated
+let favQuery = '';           // keyword filter (title / actresses / code)
+let favPage = 0;             // 0-based current page (favorites view)
+let favBatch = false;        // batch-select mode
+let favSelected = new Set(); // codes selected for batch delete
+
+let _favDB = null;
+let _favDBPromise = null;
+
+function favDB() {
+  if (_favDB) return Promise.resolve(_favDB);
+  if (_favDBPromise) return _favDBPromise;
+  _favDBPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(FAV_DB_NAME, FAV_DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(FAV_STORE)) {
+        db.createObjectStore(FAV_STORE, { keyPath: 'code' });
+      }
+    };
+    req.onsuccess = () => { _favDB = req.result; resolve(_favDB); };
+    req.onerror = () => reject(req.error);
+  });
+  return _favDBPromise;
+}
+
+function favGetAll() {
+  return favDB().then(db => new Promise((resolve, reject) => {
+    const req = db.transaction(FAV_STORE).objectStore(FAV_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+function favPutAll(records) {
+  if (!records.length) return favDB();
+  return favDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(FAV_STORE, 'readwrite');
+    const store = tx.objectStore(FAV_STORE);
+    records.forEach(r => store.put(r));
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  }));
+}
+
+function favDeleteAll(codes) {
+  if (!codes.length) return favDB();
+  return favDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(FAV_STORE, 'readwrite');
+    const store = tx.objectStore(FAV_STORE);
+    codes.forEach(c => store.delete(c));
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  }));
+}
+
+function favClearStore() {
+  return favDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(FAV_STORE, 'readwrite');
+    tx.objectStore(FAV_STORE).clear();
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  }));
+}
+
+// Open the DB, migrate any legacy localStorage data, populate the cache.
+async function loadFavorites() {
+  favorFavoritesFallback();
+  try {
+    let records = await favGetAll();
+    if (!records.length) {
+      let legacy = [];
+      try { legacy = JSON.parse(localStorage.getItem(FAV_LEGACY_KEY) || '[]'); } catch (e) { legacy = []; }
+      if (Array.isArray(legacy) && legacy.some(r => r && r.code)) {
+        const clean = legacy.filter(r => r && r.code).map(normalizeFav);
+        await favPutAll(clean);
+        records = await favGetAll();
+      }
+      localStorage.removeItem(FAV_LEGACY_KEY);
+    }
+    favorites = records.map(normalizeFav).sort(favSortNewest);
+  } catch (e) {
+    console.warn('IndexedDB unavailable, falling back to localStorage:', e);
+    favorFavoritesFallback();
+  }
+  favLoaded = true;
+  if (currentMode === 'fav') renderFavorites();
+}
+
+function favorFavoritesFallback() {
+  try {
+    favorites = JSON.parse(localStorage.getItem(FAV_LEGACY_KEY) || '[]')
+      .filter(r => r && r.code).map(normalizeFav).sort(favSortNewest);
+  } catch (e) { favorites = []; }
+}
+
+function favSortNewest(a, b) { return (b.addedAt || 0) - (a.addedAt || 0); }
+
+function normalizeFav(r) {
+  return {
+    code: String(r.code || ''),
+    title: r.title || '',
+    date: r.date || '',
+    actresses: r.actresses || '',
+    cover: (r.cover && !String(r.cover).startsWith('data:')) ? String(r.cover) : '',
+    images: Array.isArray(r.images) ? r.images.map(i => ({ type: i && i.type, url: i && i.url })).filter(i => i.url) : [],
+    addedAt: r.addedAt || 0,
+  };
+}
+
+function isFavorited(code) {
+  return !!code && favorites.some(f => f.code === code);
+}
+
+function refreshFavButton() {
+  const btn = document.getElementById('btn-fav');
+  btn.disabled = !currentCode;
+  const on = isFavorited(currentCode);
+  btn.classList.toggle('active', on);
+  const ico = btn.querySelector('.action-ico');
+  ico.textContent = on ? '♥' : '♡';
+  const lbl = btn.querySelector('.action-lbl');
+  lbl.textContent = on ? t('fav_saved') : (currentCode ? t('fav_btn') : t('fav_nofav'));
+}
+
+function toggleFav() {
+  if (!currentCode) return;
+  const existing = favorites.find(f => f.code === currentCode);
+  if (existing) {
+    favorites = favorites.filter(f => f.code !== currentCode);
+    refreshFavButton();
+    renderFavIfVisible();
+    favDeleteAll([currentCode]).catch(e => console.warn('fav delete:', e));
+    return;
+  }
+  const w = currentModalWork || {};
+  const cv = (w.cover && (w.cover.medium || w.cover.large)) || w.coverUrl || '';
+  const rec = normalizeFav({
+    code: currentCode,
+    title: w.title || '',
+    date: w.date || '',
+    actresses: w.actresses || '',
+    cover: cv,
+    images: Array.isArray(w.images) ? w.images.map(img => ({ type: img.type, url: img.url })) : [],
+    addedAt: Date.now(),
+  });
+  favorites.unshift(rec);
+  favPutAll([rec]).catch(e => console.warn('fav put:', e));
+  refreshFavButton();
+  renderFavIfVisible();
+}
+
+function renderFavIfVisible() {
+  if (currentMode === 'fav') renderFavorites();
+  updateFavToolbarVisible();
+}
+
+function showFavorites() {
+  switchMode('fav');
+}
+
+// Whether a favorite matches the keyword query (case-insensitive) across
+// 番号, title and actress names.
+function favMatches(f, q) {
+  const hay = `${f.code || ''} ${f.title || ''} ${f.actresses || ''}`.toLowerCase();
+  return hay.indexOf(q) !== -1;
+}
+
+function favFiltered() {
+  const q = favQuery.trim().toLowerCase();
+  return q ? favorites.filter(f => favMatches(f, q)) : favorites.slice();
+}
+
+// The favorites grid reuses the card markup (card-img / card-body) plus a
+// checkbox (batch mode) and a per-card remove button in the top corner.
+function renderFavorites() {
+  const container = document.getElementById('cards');
+  const titleEl = document.getElementById('content-title');
+  const countEl = document.getElementById('content-count');
+  const pagEl = document.getElementById('pagination');
+
+  if (!favLoaded) {
+    container.innerHTML = `<div class="status-msg">${t('loading')}</div>`;
+    pagEl.innerHTML = '';
+    return;
+  }
+
+  const q = favQuery.trim().toLowerCase();
+  const filtered = favFiltered();
+  const total = filtered.length;
+  const pages = Math.max(1, Math.ceil(total / FAV_PAGE_SIZE));
+  if (favPage > pages - 1) favPage = Math.max(0, pages - 1);
+  const start = favPage * FAV_PAGE_SIZE;
+  const pageItems = filtered.slice(start, start + FAV_PAGE_SIZE);
+
+  titleEl.textContent = t('fav_title');
+  countEl.textContent = t('total', total);
+
+  if (total === 0) {
+    container.innerHTML = `<div class="status-msg">${q ? t('fav_no_match') : t('no_fav')}</div>`;
+    pagEl.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = pageItems.map((f, i) => {
+    const code = f.code || '';
+    const qc = escAttr(JSON.stringify(code));
+    const payload = { images: f.images || [], title: f.title || '', code, date: f.date || '',
+                      coverUrl: f.cover || '', actresses: f.actresses || '' };
+    return `
+      <div class="card fav-card fade-in" style="animation-delay:${i*30}ms"
+        onclick="handleCardClick(event, this, ${escAttr(JSON.stringify(payload))})">
+        <div class="fav-card-tools">
+          <label class="fav-chk" title="${escAttr(t('fav_batch'))}">
+            <input type="checkbox" ${favSelected.has(code) ? 'checked' : ''} onchange="favToggleSelect(${qc}, this.checked)">
+          </label>
+          <button class="fav-del" title="${escAttr(t('fav_del_one'))}" onclick="event.stopPropagation();favDeleteOne(${qc})">✕</button>
+        </div>
+        <img class="card-img" src="${escAttr(f.cover || '')}" alt="${escAttr(f.title || '')}" loading="lazy"
+          onerror="this.style.background='linear-gradient(135deg,var(--border),var(--border))'">
+        <div class="card-body">
+          <div class="card-title">${escHtml(f.title || '')}</div>
+          <div class="card-sub">
+            ${code ? `<span class="card-id" data-code="${escAttr(code)}" title="${escAttr(t('copy'))}">${escHtml(code)}</span>` : ''}
+            ${f.date ? `<span class="card-date">${escHtml(f.date.replace(/-/g, '/'))}</span>` : ''}
+          </div>
+          ${f.actresses ? `<div class="card-meta"><span class="card-tag">${escHtml(f.actresses)}</span></div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  const allPageSelected = pageItems.length > 0 && pageItems.every(f => favSelected.has(f.code));
+  const selAll = document.querySelector('#fav-chk-all input');
+  if (selAll) selAll.checked = allPageSelected;
+
+  renderFavPagination(total);
+}
+
+function renderFavPagination(total) {
+  const el = document.getElementById('pagination');
+  const pages = Math.max(1, Math.ceil(total / FAV_PAGE_SIZE));
+  el.innerHTML = `
+    <button class="page-btn" onclick="favPrevPage()" ${favPage === 0 ? 'disabled' : ''}>${t('prev')}</button>
+    <span class="page-info">${favPage + 1} / ${pages}</span>
+    <button class="page-btn" onclick="favNextPage()" ${favPage >= pages - 1 ? 'disabled' : ''}>${t('next')}</button>`;
+}
+
+function favPrevPage() { if (favPage > 0) { favPage--; renderFavorites(); } }
+function favNextPage() { if (favPage * FAV_PAGE_SIZE + FAV_PAGE_SIZE < favFiltered().length) { favPage++; renderFavorites(); } }
+
+let _favSearchTimer = 0;
+function favSearch(v) {
+  clearTimeout(_favSearchTimer);
+  _favSearchTimer = setTimeout(() => {
+    favQuery = v || '';
+    favPage = 0;
+    favSelected.clear();
+    renderFavorites();
+    updateFavToolbarUi();
+  }, 200);
+}
+
+async function favDeleteOne(code) {
+  favorites = favorites.filter(f => f.code !== code);
+  favSelected.delete(code);
+  renderFavorites();
+  updateFavToolbarUi();
+  try { await favDeleteAll([code]); } catch (e) { console.warn('fav delete:', e); }
+}
+
+function favToggleBatch() {
+  favBatch = !favBatch;
+  if (!favBatch) favSelected.clear();
+  renderFavorites();
+  updateFavToolbarUi();
+}
+
+function favToggleSelect(code, on) {
+  if (on) favSelected.add(code); else favSelected.delete(code);
+  updateFavToolbarUi();
+}
+
+function favToggleSelectPage(checked) {
+  const q = favQuery.trim().toLowerCase();
+  const filtered = favFiltered();
+  const start = favPage * FAV_PAGE_SIZE;
+  filtered.slice(start, start + FAV_PAGE_SIZE).forEach(f => {
+    if (checked) favSelected.add(f.code); else favSelected.delete(f.code);
+  });
+  renderFavorites();
+  updateFavToolbarUi();
+}
+
+async function favDeleteSelected() {
+  if (!favSelected.size) return;
+  const codes = Array.from(favSelected);
+  favorites = favorites.filter(f => !favSelected.has(f.code));
+  favSelected.clear();
+  favBatch = false;
+  renderFavorites();
+  updateFavToolbarUi();
+  try { await favDeleteAll(codes); } catch (e) { console.warn('fav delete:', e); }
+}
+
+async function favClearAll() {
+  if (!confirm(t('fav_clear_confirm'))) return;
+  favorites = [];
+  favSelected.clear();
+  favPage = 0;
+  favQuery = '';
+  const input = document.getElementById('fav-search-input');
+  if (input) input.value = '';
+  renderFavorites();
+  updateFavToolbarUi();
+  try { await favClearStore(); } catch (e) { console.warn('fav clear:', e); }
+}
+
+// --- import / export ---
+function favImportTrigger() {
+  document.getElementById('fav-import-file').click();
+}
+
+async function favImportFile(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const arr = JSON.parse(text);
+    if (!Array.isArray(arr)) throw new Error('not an array');
+    const valid = arr.filter(r => r && r.code);
+    if (!valid.length) { alert(t('fav_import_empty')); return; }
+    const imports = valid.map(r => normalizeFav({ ...r, addedAt: r.addedAt || Date.now() }));
+    await favPutAll(imports);
+    favorites = (await favGetAll()).map(normalizeFav).sort(favSortNewest);
+    favPage = 0;
+    renderFavorites();
+    updateFavToolbarUi();
+    alert(t('fav_import_ok', imports.length));
+  } catch (err) {
+    console.warn('fav import:', err);
+    alert(t('fav_import_fail'));
+  }
+}
+
+function favExport() {
+  if (!favorites.length) {
+    alert(t('no_fav'));
+    return;
+  }
+  const blob = new Blob([JSON.stringify(favorites.map(f => ({
+    code: f.code, title: f.title, date: f.date, actresses: f.actresses,
+    cover: f.cover, images: f.images, addedAt: f.addedAt,
+  })), null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'dm9-favorites.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// --- toolbar visibility / batch ui ---
+function favToolbar() { return document.getElementById('fav-toolbar'); }
+
+function updateFavToolbarVisible() {
+  const tb = favToolbar();
+  if (!tb) return;
+  tb.style.display = currentMode === 'fav' ? '' : 'none';
+}
+
+function updateFavToolbarUi() {
+  const tb = favToolbar();
+  if (!tb) return;
+  tb.classList.toggle('batch', favBatch);
+  const delBtn = document.getElementById('fav-batch-del');
+  delBtn.classList.toggle('show', favBatch);
+  delBtn.disabled = favSelected.size === 0;
+  delBtn.textContent = `${t('fav_del_selected')} (${favSelected.size})`;
+  const chkAll = document.getElementById('fav-chk-all');
+  chkAll.style.display = favBatch ? '' : 'none';
+  document.getElementById('fav-batch').classList.toggle('active', favBatch);
+}
+
 // ========== Cards ==========
 function renderCards(data) {
   const container = document.getElementById('cards');
@@ -2867,7 +3448,7 @@ function renderCards(data) {
     const dateHtml = w.deliveryStartAt ? `<span class="card-date">${escHtml(fmtRelease(w.deliveryStartAt))}</span>` : '';
     return `
       <div class="card fade-in" style="animation-delay:${i*30}ms"
-        onclick="handleCardClick(event, this, ${escAttr(JSON.stringify({images:w.images||[],title:w.title,code,date:fmtRelease(w.deliveryStartAt)}))})">
+        onclick="handleCardClick(event, this, ${escAttr(JSON.stringify({images:w.images||[],title:w.title,code,date:fmtRelease(w.deliveryStartAt),cover:w.cover||{},actresses}))})">
         <img class="card-img" src="${w.cover.medium || w.cover.large || ''}" alt="${escAttr(w.title || '')}" loading="lazy"
           onerror="this.style.background='linear-gradient(135deg,var(--border),var(--border))'">
         <div class="card-body">
@@ -3079,12 +3660,17 @@ function updateSubtitle() {
   document.getElementById('header-sub').textContent =
     currentMode === 'today' ? t('subtitle_today')
     : currentMode === 'search' ? t('subtitle_search')
+    : currentMode === 'fav' ? t('subtitle_fav')
     : t('subtitle_ranking');
 }
 
 function loadCurrentData() {
   if (currentMode === 'search') {
     loadSearchData();
+    return;
+  }
+  if (currentMode === 'fav') {
+    renderFavorites();
     return;
   }
   currentMode === 'today' ? loadTodayData() : loadRankingData();
@@ -3103,6 +3689,8 @@ function updateHash() {
   } else if (currentMode === 'today') {
     const d = DATES[currentDateIdx] || TODAY;
     if (d !== TODAY) hash = `#today/${d}`;
+  } else if (currentMode === 'fav') {
+    hash = '#fav';
   }
   if (location.hash !== hash) history.replaceState(null, '', hash);
 }
@@ -3124,6 +3712,8 @@ function syncModeButtons() {
   document.getElementById('btn-today').classList.toggle('active', todayActive);
   document.getElementById('btn-ranking').classList.toggle('active', currentMode === 'ranking');
   document.getElementById('btn-search').classList.toggle('active', currentMode === 'search');
+  const favsBtn = document.getElementById('btn-favs');
+  if (favsBtn) favsBtn.classList.toggle('active', currentMode === 'fav');
 }
 
 function switchMode(mode) {
@@ -3135,6 +3725,12 @@ function switchMode(mode) {
     currentSearch = '';
     const input = document.getElementById('search-input');
     if (input) input.value = '';
+  }
+  if (mode === 'fav') {
+    lastMode = lastMode || 'today';
+    const input = document.getElementById('search-input');
+    if (input) input.value = '';
+    currentSearch = '';
   }
   document.getElementById('timeline-section').style.display = mode === 'today' ? '' : 'none';
   document.getElementById('search-pill').classList.toggle('open', mode === 'search');
@@ -3149,6 +3745,7 @@ function switchMode(mode) {
   syncModeButtons();
   loadCurrentData();
   updateHash();
+  updateFavToolbarVisible();
 }
 
 // ========== 18+ / NSFW Gate ==========
@@ -3180,6 +3777,7 @@ function checkGate() {
 function initApp() {
   document.documentElement.style.overflow = '';
   document.getElementById('calendar-input').max = TODAY;
+  loadFavorites();
   renderTimeline();
   applyTheme();
   applyBrowse();
@@ -3187,10 +3785,14 @@ function initApp() {
   initDrag();
 
   // Restore the view saved in location.hash so a refresh lands on the same
-  // interface (#today[/YYYY-MM-DD] / #ranking / #search[/番号]).
+  // interface (#today[/YYYY-MM-DD] / #ranking / #search[/番号] / #fav).
   const hash = location.hash.replace(/^#/, '');
   if (hash === 'ranking') {
     switchMode('ranking'); // switchMode loads the data itself
+    return;
+  }
+  if (hash === 'fav') {
+    switchMode('fav');
     return;
   }
   if (hash === 'today' || hash.startsWith('today/')) {
