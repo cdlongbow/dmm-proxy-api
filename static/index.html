@@ -124,6 +124,8 @@
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     overflow-x: hidden;
   }
 
@@ -235,6 +237,7 @@
 
   /* ---- top row: mode switch + settings ---- */
   .top-row {
+    width: 100%;
     max-width: 1400px;
     margin: 0 auto;
     padding: 20px 20px 0;
@@ -553,6 +556,8 @@
 
   /* ---- content area ---- */
   .content {
+    flex: 1;
+    width: 100%;
     max-width: 1400px;
     margin: 0 auto;
     padding: 24px 20px 60px;
@@ -1062,13 +1067,23 @@
   /* ---- footer / copyright ---- */
   .site-footer {
     max-width: 1400px;
+    width: 100%;
     margin: 0 auto;
     padding: 0 20px 24px;
-    text-align: right;
     font-size: 11px;
     color: var(--text-light);
     opacity: .8;
     user-select: none;
+  }
+  .site-note {
+    text-align: center;
+    margin: 0 0 8px;
+    font-size: 11px;
+    color: var(--text-light);
+    opacity: .85;
+  }
+  .site-footer-row {
+    text-align: right;
   }
   .site-footer a {
     color: inherit;
@@ -1719,7 +1734,10 @@
 </div>
 
 <footer class="site-footer">
-  <span>Powered by <a href="https://t.me/eulerme" target="_blank" rel="noopener nofollow">eulerme</a> with ❤️ @2026</span>
+  <div class="site-note" data-i18n="privacy_note">本站不会收集您的任何数据,收藏数据在您本地。</div>
+  <div class="site-footer-row">
+    <span>Powered by <a href="https://t.me/eulerme" target="_blank" rel="noopener nofollow">eulerme</a> with ❤️ @2026</span>
+  </div>
 </footer>
 
 <!-- 18+ / NSFW Gate -->
@@ -1779,6 +1797,7 @@
   </div>
 </div>
 
+<script src="lib/idb.min.js"></script>
 <script>
 // ========== Frontend session token ==========
 // The browser never holds the master DMM_AUTH_TOKEN. /api/session issues a
@@ -1843,6 +1862,7 @@ const I18N = {
     subtitle_fav: '收藏的作品',
     no_fav: '还没有收藏任何作品',
     fav_nofav: '♥ 未收藏',
+    privacy_note: '本站不会收集您的任何数据,收藏数据在您本地。',
     fav_search_ph: '搜索标题 / 演员 / 番号',
     fav_import: '导入',
     fav_export: '导出',
@@ -1850,6 +1870,7 @@ const I18N = {
     fav_batch: '批量删除',
     fav_del_selected: '删除所选',
     fav_del_one: '删除该收藏',
+    fav_del_one_confirm: '确认删除收藏「%s」？',
     fav_clear_confirm: '确认清空全部收藏？此操作不可恢复。',
     fav_import_ok: '成功导入 %d 条收藏',
     fav_import_fail: '导入失败：文件格式不正确',
@@ -1929,6 +1950,7 @@ const I18N = {
     subtitle_fav: 'Favorite works',
     no_fav: 'No favorites yet',
     fav_nofav: '♥ Not saved',
+    privacy_note: 'This site never collects your data — favorites stay on your device.',
     fav_search_ph: 'Search title / actress / code',
     fav_import: 'Import',
     fav_export: 'Export',
@@ -1936,6 +1958,7 @@ const I18N = {
     fav_batch: 'Batch delete',
     fav_del_selected: 'Delete selected',
     fav_del_one: 'Remove favorite',
+    fav_del_one_confirm: 'Remove favorite 「%s」?',
     fav_clear_confirm: 'Clear all favorites? This cannot be undone.',
     fav_import_ok: 'Imported %d favorites',
     fav_import_fail: 'Import failed: invalid file',
@@ -3025,66 +3048,53 @@ let favPage = 0;             // 0-based current page (favorites view)
 let favBatch = false;        // batch-select mode
 let favSelected = new Set(); // codes selected for batch delete
 
-let _favDB = null;
+// IndexedDB access via the `idb` library (vendored at static/lib/idb.min.js).
+// The connection is opened once and shared; `favGetAll`/`favPutAll`/... use
+// idb's promise wrappers instead of hand-rolled transaction callbacks.
 let _favDBPromise = null;
 
 function favDB() {
-  if (_favDB) return Promise.resolve(_favDB);
-  if (_favDBPromise) return _favDBPromise;
-  _favDBPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(FAV_DB_NAME, FAV_DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(FAV_STORE)) {
-        db.createObjectStore(FAV_STORE, { keyPath: 'code' });
-      }
-    };
-    req.onsuccess = () => { _favDB = req.result; resolve(_favDB); };
-    req.onerror = () => reject(req.error);
-  });
+  if (!_favDBPromise) {
+    if (typeof idb === 'undefined') {
+      _favDBPromise = Promise.reject(new Error('idb library unavailable'));
+    } else {
+      _favDBPromise = idb.openDB(FAV_DB_NAME, FAV_DB_VERSION, {
+        upgrade(db) {
+          if (!db.objectStoreNames.contains(FAV_STORE)) {
+            db.createObjectStore(FAV_STORE, { keyPath: 'code' });
+          }
+        },
+      });
+      _favDBPromise.catch(() => { _favDBPromise = null; });
+    }
+  }
   return _favDBPromise;
 }
 
-function favGetAll() {
-  return favDB().then(db => new Promise((resolve, reject) => {
-    const req = db.transaction(FAV_STORE).objectStore(FAV_STORE).getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  }));
+async function favGetAll() {
+  const db = await favDB();
+  return db.getAll(FAV_STORE);
 }
 
-function favPutAll(records) {
-  if (!records.length) return favDB();
-  return favDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(FAV_STORE, 'readwrite');
-    const store = tx.objectStore(FAV_STORE);
-    records.forEach(r => store.put(r));
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  }));
+async function favPutAll(records) {
+  if (!records.length) return;
+  const db = await favDB();
+  const tx = db.transaction(FAV_STORE, 'readwrite');
+  await Promise.all(records.map(r => tx.store.put(r)));
+  await tx.done;
 }
 
-function favDeleteAll(codes) {
-  if (!codes.length) return favDB();
-  return favDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(FAV_STORE, 'readwrite');
-    const store = tx.objectStore(FAV_STORE);
-    codes.forEach(c => store.delete(c));
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  }));
+async function favDeleteAll(codes) {
+  if (!codes.length) return;
+  const db = await favDB();
+  const tx = db.transaction(FAV_STORE, 'readwrite');
+  await Promise.all(codes.map(c => tx.store.delete(c)));
+  await tx.done;
 }
 
-function favClearStore() {
-  return favDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(FAV_STORE, 'readwrite');
-    tx.objectStore(FAV_STORE).clear();
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  }));
+async function favClearStore() {
+  const db = await favDB();
+  await db.clear(FAV_STORE);
 }
 
 // Open the DB, migrate any legacy localStorage data, populate the cache.
@@ -3285,6 +3295,7 @@ function favSearch(v) {
 }
 
 async function favDeleteOne(code) {
+  if (!confirm(t('fav_del_one_confirm', code))) return;
   favorites = favorites.filter(f => f.code !== code);
   favSelected.delete(code);
   renderFavorites();
