@@ -158,6 +158,7 @@
     margin-left: auto;
   }
   .settings-btn {
+    height: 29px;
     padding: 5px 12px;
     border-radius: 16px;
     border: 1.5px solid var(--border);
@@ -3768,6 +3769,7 @@ function enterSearchMode() {
   if (currentSearch && !input.value) input.value = currentSearch;
   updateSearchClear();
   updateSearchRankBtn();
+  updateFavToolbarVisible();
   setTimeout(() => { input.focus(); input.select(); }, 60);
   updateHash();
 }
