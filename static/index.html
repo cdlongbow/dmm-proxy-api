@@ -2550,6 +2550,8 @@ let currentPage = 0;
 const PAGE_SIZE = 30;
 let currentSearch = '';
 let lastMode = 'today';
+let favReturnMode = '';
+let favReturnSearch = '';
 let modalImages = [];
 let modalIdx = 0;
 
@@ -3331,9 +3333,18 @@ function renderFavIfVisible() {
 
 function showFavorites() {
   if (currentMode === 'fav') {
-    switchMode(lastMode && lastMode !== 'fav' ? lastMode : 'today');
+    if (favReturnMode === 'search') {
+      document.getElementById('search-input').value = favReturnSearch;
+      currentSearch = favReturnSearch;
+      updateSearchClear();
+      switchMode('search');
+      return;
+    }
+    switchMode(favReturnMode && favReturnMode !== 'fav' ? favReturnMode : 'today');
     return;
   }
+  favReturnMode = currentMode;
+  favReturnSearch = currentSearch;
   switchMode('fav');
 }
 
