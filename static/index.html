@@ -4038,9 +4038,20 @@ function checkGate() {
 }
 
 // ========== Init ==========
+
+// Request persistent storage for local favorites (IndexedDB) so the browser is
+// less likely to evict the origin's data under storage pressure. Best-effort,
+// non-blocking, and only on secure contexts (HTTPS / localhost) where the
+// StorageManager API exists. Never awaited — persistence is a nice-to-have.
+function requestPersistFavorites() {
+  if (!navigator.storage || typeof navigator.storage.persist !== 'function') return;
+  navigator.storage.persist().catch(() => {});
+}
+
 function initApp() {
   document.documentElement.style.overflow = '';
   document.getElementById('calendar-input').max = TODAY;
+  requestPersistFavorites();
   loadFavorites();
   renderTimeline();
   applyTheme();
