@@ -3330,6 +3330,10 @@ function renderFavIfVisible() {
 }
 
 function showFavorites() {
+  if (currentMode === 'fav') {
+    switchMode(lastMode && lastMode !== 'fav' ? lastMode : 'today');
+    return;
+  }
   switchMode('fav');
 }
 
