@@ -16,6 +16,7 @@
 
 local cjson = require "cjson"
 local content = require "api_content"
+local searchrank = require "api_searchrank"
 
 local _M = {}
 
@@ -126,6 +127,7 @@ function _M.handle(raw_id)
             offset = 0
         end
 
+        searchrank.record(code)
         local cached = cache_get(code, offset)
         if cached then
             ngx.status = 200

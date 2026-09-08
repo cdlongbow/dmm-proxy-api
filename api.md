@@ -1040,6 +1040,43 @@ Authorization: Bearer <token>
 | `200`（`works` 为空） | 未探测到候选数字版 id（含 GraphQL 失败，见日志） |
 | `401`/`403` | 未带 / 无效 token |
 
+> **搜索频次统计**：每次 `/api/search/:id` 的有效查询都会把该番号计入「搜索排行榜」分析字典（`searchrank_cache`，见下节 4.7），供前端「热门搜索 Top 20」展示。仅记录番号与其出现次数，不记录任何个人信息。
+
+---
+
+## 4.7 搜索排行榜（Search Ranking）
+
+展示搜索频率最高的 20 个番号，供前端「番号搜索」页面的「热门搜索 Top 20」按钮使用。
+
+```
+GET /api/searchrank
+```
+
+**鉴权**：与其它 `/api/*` 一致，需要 `Authorization: Bearer <token>`。
+
+**数据来源与存储**：每个有效番号搜索（见 4.6）都会在 `searchrank_cache` 共享字典（`lua_shared_dict`，固定 **1m**，在 `nginx.conf` 声明，不随 `DMM_CACHE_TOTAL` 分配）中把该番号的计数 +1。由于只存番号和次数、不存个人数据，1m 足够容纳数千个不重复番号。每个番号的 TTL 在每次搜索时刷新为 **7 天**（`7*86400` 秒），超过 7 天未被搜索的番号自动过期。响应每次实时从该字典统计排序得出，不做二次缓存。
+
+**响应 `200`**
+
+```json
+{
+  "total": 42,
+  "count": 20,
+  "items": [
+    { "code": "IPX-685", "count": 37 },
+    { "code": "ABP-477", "count": 29 }
+  ]
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `total` | 当前字典中不重复番号总数 |
+| `count` | 实际返回条数（≤ 20） |
+| `items` | 按 `count` 降序前 20 条；`code` 为番号，`count` 为搜索次数 |
+
+**注意**：排行榜数据为进程内、易失且非严格一致——多 worker 下计数按 worker 分别累加，重启容器即清零（计时统计场景足够，非持久化数据库）。
+
 ---
 
 ## 5. 封面图片代理
@@ -1115,13 +1152,15 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 
 - **今日更新**：7 天时间线选择器 + 卡片网格浏览
 - **热门排行**：销量排名展示，含排名序号与收藏数
-- **番号搜索**：输入番号（如 `ABP-477`、`ABF-365`）一键搜索：MGS 番号（`ABF`/`SIRO`/`MAAN` 等前缀）走 mgstage.com 抓取，其余走 GraphQL 数字版直接探测（无 appid），DMM 查不到时自动用 javbus JSON API 兜底，前端按 `source` 分支独立渲染 DMM / javbus / mgs 三组字段（javbus/mgs 为纯字符串风格字段、导演缺失显示「未知」）
+- **番号搜索**：输入番号（如 `ABP-477`、`ABF-365`）一键搜索：MGS 番号（`ABF`/`SIRO`/`MAAN` 等前缀）走 mgstage.com 抓取，其余走 GraphQL 数字版直接探测（无 appid），DMM 查不到时自动用 javbus JSON API 兜底，前端按 `source` 分支独立渲染 DMM / javbus / mgs 三组字段（javbus/mgs 为纯字符串风格字段、导演缺失显示「未知」）；搜索框带一键清空 ✕；搜索页提供「热门搜索 Top 20」按钮展示搜索排行榜（`/api/searchrank`），点击榜单项直达搜索
+- **本地收藏**：卡片 ♡ 收藏到浏览器本地（IndexedDB，经 `idb` 库读写，`<script src="lib/idb.min.js">` 引入）。「我的收藏」页面支持：每页 20 条分页、按标题/演员/番号关键词搜索、单选/批量/清空删除（删除前弹确认框）、导入/导出 JSON（`dm9-favorites.json`）；旧的 `dm9_favs` localStorage 数据在首次加载时自动迁移到 IndexedDB 并清除；删除单个收藏时弹「确认删除收藏「%s」？」确认框。数据全部本地存储，不上传任何服务器
 - **图片预览**：点击卡片封面弹出大图弹窗，封面 + 剧照轮播，键盘 `←` `→` / `Esc` 导航；点击**番号**自动复制到剪贴板（含弹窗内番号，带"已复制"提示）；javbus 来源的封面（`www.javbus.com` 域，浏览器 CORS 拦截）在卡片与大图弹窗中替换为内置占位图，mgs 样图/封面与 javbus 兜底的样图（均 mgstage CDN）正常显示
 - **磁力面板**：三个来源（SUKEBEI / JAVDB / JAVBUS）Tab 展示磁力列表，磁力点击复制；**某个来源失败时该 Tab 内显示「重新获取」按钮**（`?s=<来源>` 定向重拉）；三个来源全为空的番号显示"当前番号暂无磁力链接"+「重新获取」按钮（全量重拉）
 - **播放平台**：点「跳转播放」并发探测 missav / supjav / jable / 123av 是否可播，可跳转的显示按钮、探测失败的标注"探测失败"
 - **配色主题**：6 套小清新风格一键切换（薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑）
 - **中英双语**：界面语言一键切换
 - **Mock 降级**：API 不可用时自动使用内置 mock 数据
+- **隐私声明**：页脚常驻「本站不会收集您的任何数据，收藏数据在您本地。」——收藏、主题、语言等偏好全部存于浏览器本地（IndexedDB / localStorage），不上传服务器
 
 ### 前端调用的接口
 
@@ -1131,6 +1170,7 @@ GET /proxy/video/litevideo/freepv/s/ssi/ssis00497/ssis00497_mhb_w.mp4
 | `GET /api/todayupdate?date=YYYY-MM-DD&offset=0&limit=30` | 今日更新列表 | `Bearer <token>` |
 | `GET /api/ranking?offset=0&limit=30` | 热门排行榜 | `Bearer <token>` |
 | `GET /api/search/:id?offset=0&hits=30` | FANZA 番号搜索（上游大写） | `Bearer <token>` |
+| `GET /api/searchrank` | 搜索频率前 20 的番号 | `Bearer <token>` |
 | `GET /api/magnet/:id` | 磁力链接聚合（可选 `?s=<来源>` 定向） | `Bearer <token>` |
 | `GET /api/findplay/:id` | 播放平台探测 | `Bearer <token>` |
 

@@ -70,6 +70,11 @@ Authorization: Bearer {{token}}
 GET {{host}}/api/search/ABF-365
 Authorization: Bearer {{token}}
 
+### 2.6.4 搜索排行榜（Top 20 番号，7 天 TTL）
+# 返回搜索频率前 20 的番号 code + count（仅番号与次数，不含个人数据）
+GET {{host}}/api/searchrank
+Authorization: Bearer {{token}}
+
 ### 3. 预告片信息（始终需 token；返回的 proxy 在 on 时为签名 URL）
 GET {{host}}/api/trailer/SNOS-213
 Authorization: Bearer {{token}}

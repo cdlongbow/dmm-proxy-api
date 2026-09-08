@@ -16,9 +16,10 @@
 - **每日更新列表**：`/api/todayupdate` 通过 DMM FANZA GraphQL API 获取每日更新的作品列表，支持按日期查询、分页
 - **热门排行榜**：`/api/ranking` 按销售排名分数返回热门作品，支持分页
 - **番号搜索**：`/api/search/:id` 将番号直接展开为候选数字版 content id（`maker` + 补零序号 + 常见前缀）并经 video.dmm.co.jp 的 GraphQL `ContentPageData` 探测，**无需 affiliate appid**，命中即返回完整详情；**MGS 番号**（如 `ABF-365`/`SIRO5665`/`200GANA-2359`，前缀+数字后缀规则见 `lua/api_mgs.lua`）**直接抓取 mgstage.com 产品详情页**（`source="mgs"`，DMM 不收录这些作品，返回简介/时长/配信开始日/发售日/评分/价格/演员/系列/厂商/品牌/类型/样图）；其余番号 **DMM 查不到时自动用 javbus JSON API 兜底**（`source="javbus"`，返回识别码/发行日/时长/导演/制作商/发行商/类别/演员/样图等，导演缺失显示「未知」、样图走外部 CDN 避免 CORS）；大小写不敏感、忽略连字符；结果缓存 6 小时（`search_cache`，占 `DMM_CACHE_TOTAL` 的 5%）
+- **搜索排行榜**：`/api/searchrank` 返回**搜索频率前 20 的番号**（仅番号与次数，不含个人数据）。每次 `/api/search` 都会把番号计入分析字典（`lua_shared_dict searchrank_cache`，固定 1m，7 天 TTL，不随 `DMM_CACHE_TOTAL` 分配）；前端「番号搜索」页面提供「热门搜索 Top 20」按钮，点击弹出榜单、点番号直达搜索
 - **会话令牌（Session Token）**：`/api/session` 签发**短时效、绑定客户端 IP** 的 token 给前端使用，主 token（`DMM_AUTH_TOKEN`）永不下发浏览器；`/api/*` 同时接受主 token 或 session token（`Authorization: Bearer`）
 - **结果缓存**：todayupdate / ranking / film_sample 缓存 8 小时、search / magnet 6 小时、findplay（命中 6h / 未命中 1h）、trailer_direct 7 天；缓存内存总预算由 `DMM_CACHE_TOTAL` 按固定比例自动分配（findplay 2% / ranking 5% / search 5% / trailer 5% / todayupdate 5% / film_sample 20% / magnet 其余 58%）
-- **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览、**番号搜索**（前端按 `source` 分支独立渲染 DMM / javbus / mgs 三组字段），卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航；点击番号一键复制；磁力面板三源 Tab + 失败来源「重新获取」、全部无数据「重新获取」；播放平台一键跳转
+- **前端浏览界面**：内置 SPA 单页应用（`/`），支持今日更新时间线、热门排行榜浏览、**番号搜索**（前端按 `source` 分支独立渲染 DMM / javbus / mgs 三组字段；搜索框带一键清空 ✕；页面提供「热门搜索 Top 20」按钮展示搜索排行榜）、**本地收藏**（♥ 收藏 IndexedDB、收藏页分页/搜索/导入导出），卡片点击可弹窗预览封面与剧照大图，支持左右键盘导航；点击番号一键复制；磁力面板三源 Tab + 失败来源「重新获取」、全部无数据「重新获取」；播放平台一键跳转
 - **多配色主题**：6 套小清新配色方案（薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑），一键切换，自动保存
 - **中英双语**：界面支持中文 / English 切换，自动保存偏好
 - **智能 CID 探测**：番号（如 `ABP-477`）自动转成 DMM 内部多个候选 CID（如 `abp00477`、`abp0477`、`1abp477`）逐一探测，命中第一个可用项
@@ -91,11 +92,15 @@ dmm-proxy-api/
 │   ├── api_todayupdate.lua # /api/todayupdate 实现（每日更新列表）
 │   ├── api_ranking.lua     # /api/ranking 实现（热门排行榜）
 │   ├── api_search.lua      # /api/search 实现（番号→候选 id 探测 GraphQL，无需 appid，缓存）
+│   ├── api_searchrank.lua  # /api/searchrank 搜索排行榜（前 20 番号，7 天 TTL，固定 1m 字典）
 │   ├── api_javbus.lua      # javbus JSON API 兜底（/api/search 在 DMM 查不到番号时自动调用）
 │   ├── api_mgs.lua         # MGStage 番号源（/api/search 命中 MGS 前缀时直接抓取 mgstage.com 详情页）
 │   └── api_session.lua     # /api/session 实现（前端短时效 session token）
 ├── static/                 # 前端静态文件（docker volume 挂载，改后刷新即可）
-│   └── index.html          # SPA 单页应用（今日更新 / 排行榜 / 主题切换 / 多语言）
+│   ├── index.html          # SPA 单页应用（今日更新 / 排行榜 / 番号搜索 / 本地收藏 / 主题切换 / 多语言）
+│   └── lib/
+│       ├── idb.min.js      # vendored idb@8（IndexedDB 封装，本地收藏用，全局暴露 `idb`）
+│       └── idb-LICENSE.txt # idb ISC 许可证
 └── vendor/resty/           # 本地 vendor 的 lua-resty-http（纯 Lua，无需额外依赖）
 ```
 
@@ -492,6 +497,35 @@ Authorization: Bearer <token>
 
 （MGS 番号除外，直接走 MGS 分支）候选探测未命中时自动用 **javbus JSON API 兜底**（`source="javbus"`，`https://javbus-api.131433.xyz/api/movies/<番号>`，返回 識別碼/發行日期/長度/導演/製作商/發行商/系列/類別/演員/樣品圖像 等，导演缺失显示「未知」，样图使用外部 CDN 链接避免 CORS 拦截，附 `webUrl` 源站链接）。两者皆无结果时才返回 `200` 且 `works` 为空数组。
 
+### 搜索排行榜
+
+```
+GET /api/searchrank
+Authorization: Bearer <token>
+```
+
+返回**搜索频率前 20 的番号**（仅番号与次数，不含任何个人数据）。每个有效番号搜索都会在 `searchrank_cache` 字典（`lua_shared_dict`，固定 1m，在 `nginx.conf` 声明，不随 `DMM_CACHE_TOTAL` 分配）中把该番号计数 +1，TTL 每次搜索刷新为 **7 天**；超 7 天未搜索的番号自动过期。响应实时从字典统计排序得出。供前端「番号搜索」页面的「热门搜索 Top 20」按钮使用。
+
+```http
+GET http://localhost:8080/api/searchrank
+Authorization: Bearer <token>
+```
+
+**响应 `200`**
+
+```json
+{
+  "total": 42,
+  "count": 20,
+  "items": [
+    { "code": "IPX-685", "count": 37 },
+    { "code": "ABP-477", "count": 29 }
+  ]
+}
+```
+
+> 排行榜为进程内、易失的非严格一致数据：多 worker 下按 worker 分别累加，重启容器即清零；适合「热度统计」而非持久化数据库场景。
+
 ### 磁力链接聚合
 
 ```
@@ -608,7 +642,7 @@ Authorization: Bearer <token>
 ## 工作原理
 
 1. 客户端访问 `http://localhost:80`，nginx 返回 `static/index.html`（SPA 前端）。
-2. 前端调用 `/api/session` 获取短时效 session token（主 token 全程不进入浏览器），据此调用 `/api/todayupdate`、`/api/ranking`、`/api/magnet`、`/api/findplay` 等接口。
+2. 前端调用 `/api/session` 获取短时效 session token（主 token 全程不进入浏览器），据此调用 `/api/todayupdate`、`/api/ranking`、`/api/magnet`、`/api/findplay`、`/api/searchrank` 等接口（`/api/search/:id` 每次查询同时在该接口内把番号计入搜索排行榜）。
 3. 客户端请求 `/api/cover/:id`、`/api/film_sample/:id` 或 `/api/trailer/:id`，携带 Bearer token；`router.check_auth()` 校验（无论 protect 开关均强制）。
 4. `config.to_cids()` 将番号转为多个候选 CID。
 5. 构建响应：直接 CDN 直链 + 本机代理路径。数据来源两种：
@@ -656,12 +690,14 @@ Authorization: Bearer <token>
 |------|------|
 | **今日更新** | 7 天时间线选择器，点击日期查看当日上架作品 |
 | **热门排行** | 按 DMM 销量排名展示热门作品，含排名序号与收藏数 |
-| **卡片浏览** | 5 列网格布局，展示封面、标题、演员、商家、价格、评分 |
+| **番号搜索** | 输入番号一键搜索（DMM GraphQL 直接探测 / MGS 走 mgstage / javbus 兜底），搜索框带一键清空 ✕；搜索页提供「热门搜索 Top 20」按钮展示搜索排行榜，点番号直达搜索 |
+| **本地收藏** | 卡片上 ♡ 收藏到本地（IndexedDB），「我的收藏」页支持每页 20 条分页、按标题/演员/番号搜索、单选/批量/全选/清空删除、JSON 导入导出、旧版 localStorage 数据自动迁移；数据仅存本地，经 `idb` 库读写 |
 | **图片预览** | 点击卡片弹出大图弹窗，依次展示封面 + 全部剧照，左右箭头 / 键盘 `←` `→` 切换，`Esc` 关闭 |
 | **配色主题** | 6 套小清新风格：薄荷绿 / 樱花粉 / 薰衣草 / 海洋蓝 / 暖杏色 / 夜猫黑，右上角 🎨 切换 |
 | **中英双语** | 右上角按钮切换中文 / English，偏好自动保存到 `localStorage` |
 | **分页** | 每页 30 条，支持翻页浏览 |
 | **Mock 降级** | API 不可用时自动使用内置 mock 数据，界面仍可正常浏览 |
+| **隐私声明** | 页脚提示「本站不会收集您的任何数据，收藏数据在您本地」，数据全部存储于浏览器本地 |
 
 ### Token 机制
 

@@ -11,6 +11,10 @@
 # $DMM_CACHE_TOTAL (total MB for all query-result caches). Split by fixed
 # percentages: findplay 2%, ranking 5%, search 5%, trailer 5%, todayupdate 5%,
 # film_sample 20%, magnet gets the remaining share (58%). Default 250 if unset.
+#
+# NOTE: /api/searchrank analytics do NOT come from the query-result pools above.
+# They live in their own fixed 1 m `searchrank_cache` dict (declared in
+# nginx.conf) which is intentionally separate and never sized off DMM_CACHE_TOTAL.
 
 set -e
 

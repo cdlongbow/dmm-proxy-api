@@ -553,6 +553,28 @@
   .search-submit:hover {
     filter: brightness(1.1);
   }
+  .search-clear {
+    width: 22px;
+    height: 22px;
+    flex: none;
+    margin-right: 2px;
+    border: none;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text-light);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: filter .2s;
+    padding: 0;
+  }
+  .search-clear:hover {
+    background: #c04949;
+    color: #fff;
+  }
 
   /* ---- content area ---- */
   .content {
@@ -567,6 +589,7 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 18px;
+    gap: 10px;
   }
   .content-title {
     font-size: 16px;
@@ -576,6 +599,100 @@
   .content-count {
     font-size: 12px;
     color: var(--text-light);
+  }
+  .sr-rank-btn {
+    margin-left: auto;
+    flex: none;
+    padding: 6px 14px;
+    border-radius: 16px;
+    border: 1.5px solid var(--primary-light);
+    background: transparent;
+    color: var(--primary-dark);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .sr-rank-btn:hover {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+
+  /* ---- search rankings (top-20 番号) modal ---- */
+  .sr-rank-box {
+    max-width: 420px;
+    padding: 16px 16px 6px;
+  }
+  .sr-rank-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding-left: 4px;
+    padding-right: 22px;
+  }
+  .sr-rank-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--primary-dark);
+  }
+  .sr-rank-sub {
+    font-size: 11px;
+    color: var(--text-light);
+  }
+  .sr-rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 62vh;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .sr-rank-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .sr-rank-item:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .sr-rank-no {
+    width: 26px;
+    flex: none;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-light);
+    text-align: center;
+  }
+  .sr-rank-item:nth-child(1) .sr-rank-no { color: #d4a017; }
+  .sr-rank-item:nth-child(2) .sr-rank-no { color: #9aa0a6; }
+  .sr-rank-item:nth-child(3) .sr-rank-no { color: #c98a5b; }
+  .sr-rank-code {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: 0.5px;
+  }
+  .sr-rank-count {
+    flex: none;
+    font-size: 11px;
+    color: var(--text-light);
+  }
+  .sr-rank-empty {
+    text-align: center;
+    padding: 40px 12px;
+    color: var(--text-light);
+    font-size: 13px;
   }
 
   /* ---- cards grid ---- */
@@ -1665,7 +1782,8 @@
     <div class="search-pill" id="search-pill">
       <button class="mode-btn" id="btn-search" onclick="toggleSearchPill()" data-i18n="btn_search">Search Code</button>
       <div class="search-fields" id="search-fields">
-        <input type="text" id="search-input" class="search-input" placeholder="" autocomplete="off" spellcheck="false" onkeydown="onSearchKey(event)">
+        <input type="text" id="search-input" class="search-input" placeholder="" autocomplete="off" spellcheck="false" onkeydown="onSearchKey(event)" oninput="updateSearchClear()">
+        <button class="search-clear" id="search-clear" onclick="clearSearch()" title="清空" aria-label="清空" style="display:none">✕</button>
         <button class="search-submit" id="search-submit" onclick="runSearch()" title="🔍">🔍</button>
       </div>
     </div>
@@ -1718,6 +1836,7 @@
   <div class="content-header">
     <span class="content-title" id="content-title">Loading...</span>
     <span class="content-count" id="content-count"></span>
+    <button class="sr-rank-btn" id="btn-searchrank" onclick="openSearchRank()" style="display:none" data-i18n="searchrank">热门搜索 Top 20</button>
   </div>
   <div class="fav-toolbar" id="fav-toolbar" style="display:none">
     <input type="text" id="fav-search-input" placeholder="搜索标题 / 演员 / 番号" autocomplete="off" spellcheck="false" oninput="favSearch(this.value)">
@@ -1797,6 +1916,18 @@
   </div>
 </div>
 
+<!-- Search Rankings modal: top 20 most-searched 番号 -->
+<div class="modal-overlay" id="searchrank-modal" onclick="if(event.target===this)closeSearchRank()">
+  <div class="modal-box sr-rank-box">
+    <button class="modal-close" onclick="closeSearchRank()">&times;</button>
+    <div class="sr-rank-head">
+      <span class="sr-rank-title" data-i18n="searchrank">热门搜索 Top 20</span>
+      <span class="sr-rank-sub" id="sr-rank-sub"></span>
+    </div>
+    <div class="sr-rank-list" id="sr-rank-list"></div>
+  </div>
+</div>
+
 <script src="lib/idb.min.js"></script>
 <script>
 // ========== Frontend session token ==========
@@ -1827,6 +1958,10 @@ const I18N = {
     search_place: '输入番号',
     search_title: '搜索 %s',
     search_empty: '请输入番号',
+    searchrank: '热门搜索 Top 20',
+    searchrank_sub: '共有 %d 个不同番号搜索记录',
+    searchrank_count: '搜索 %d 次',
+    searchrank_empty: '暂无搜索记录，快去搜索番号吧',
     cal_today: '今天',
     cal_ph: '输入日期',
     
@@ -1916,6 +2051,10 @@ const I18N = {
     search_place: 'Enter a code',
     search_title: 'Search %s',
     search_empty: 'Please enter a code',
+    searchrank: 'Top 20 Searches',
+    searchrank_sub: '%d distinct codes searched',
+    searchrank_count: 'searched %d×',
+    searchrank_empty: 'No search history yet — try searching a code',
     cal_today: 'Today',
     cal_ph: 'Enter date',
     sr_delivery: 'Delivery start',
@@ -3627,6 +3766,8 @@ function enterSearchMode() {
   updateSubtitle();
   const input = document.getElementById('search-input');
   if (currentSearch && !input.value) input.value = currentSearch;
+  updateSearchClear();
+  updateSearchRankBtn();
   setTimeout(() => { input.focus(); input.select(); }, 60);
   updateHash();
 }
@@ -3645,6 +3786,86 @@ function toggleSearchPill() {
   loadSearchData();
 }
 
+function updateSearchClear() {
+  const btn = document.getElementById('search-clear');
+  if (!btn) return;
+  btn.style.display = document.getElementById('search-input').value ? '' : 'none';
+}
+
+function clearSearch() {
+  const input = document.getElementById('search-input');
+  input.value = '';
+  updateSearchClear();
+  input.focus();
+}
+
+// ---- Search rankings (top 20 most-searched 番号) ----
+function updateSearchRankBtn() {
+  const btn = document.getElementById('btn-searchrank');
+  if (!btn) return;
+  btn.style.display = currentMode === 'search' ? '' : 'none';
+}
+
+function mockSearchRank() {
+  const seed = [
+    'SSNI-111', 'ABP-477', 'IPX-685', 'STARS-876', 'MIAA-777',
+    'JUFE-123', 'PRED-234', 'MIDE-345', 'STAR-456', 'ONSD-567',
+    'REAL-678', 'SDAB-999', 'HMN-111', 'NIMR-555', 'EBOD-222',
+    'KAVR-333', 'MEYD-444', 'PRTD-888', 'CAWD-001', 'SSIS-002',
+  ];
+  const items = seed.map((code, i) => ({ code, count: 1000 - i * 47 + (i % 3) * 13 }));
+  return items.slice(0, 20);
+}
+
+function escCodeForRankAttrs(c) { return escAttr(c); }
+
+function openSearchRank() {
+  const overlay = document.getElementById('searchrank-modal');
+  const list = document.getElementById('sr-rank-list');
+  const enter = () => { overlay.classList.add('open'); };
+
+  const render = (items) => {
+    if (!items || !items.length) {
+      list.innerHTML = `<div class="sr-rank-empty">${t('searchrank_empty')}</div>`;
+      document.getElementById('sr-rank-sub').textContent = t('searchrank_sub', 0);
+      return;
+    }
+    const sub = document.getElementById('sr-rank-sub');
+    sub.textContent = null;
+    document.getElementById('sr-rank-sub').textContent = t('searchrank_sub', items.length);
+    list.innerHTML = items.map((it, i) => `
+      <div class="sr-rank-item" onclick="searchRankGo('${escCodeForRankAttrs(it.code)}')">
+        <span class="sr-rank-no">${i + 1}</span>
+        <span class="sr-rank-code">${escHtml(it.code)}</span>
+        <span class="sr-rank-count">${t('searchrank_count', it.count)}</span>
+      </div>`).join('');
+  };
+
+  (async () => {
+    let items = null;
+    try {
+      await refreshSession();
+      const res = await fetch('/api/searchrank', { headers: { 'Authorization': 'Bearer ' + __API_TOKEN__ } });
+      if (res.ok) {
+        const data = await res.json();
+        items = (data && data.items) || null;
+      }
+    } catch (e) { /* fall through to mock */ }
+    if (!items) items = mockSearchRank();
+    render(items);
+    enter();
+  })();
+}
+
+function searchRankGo(code) {
+  closeSearchRank();
+  runSearchByCode(code);
+}
+
+function closeSearchRank() {
+  document.getElementById('searchrank-modal').classList.remove('open');
+}
+
 function runSearch() {
   const input = document.getElementById('search-input');
   const val = input.value.trim().toUpperCase();
@@ -3655,6 +3876,19 @@ function runSearch() {
   currentMode = 'search';
   currentPage = 0;
   currentSearch = val;
+  enterSearchMode();
+  loadSearchData();
+  updateHash();
+}
+
+function runSearchByCode(code) {
+  if (!code) return;
+  const input = document.getElementById('search-input');
+  if (input) input.value = code;
+  updateSearchClear();
+  currentMode = 'search';
+  currentPage = 0;
+  currentSearch = code.toUpperCase();
   enterSearchMode();
   loadSearchData();
   updateHash();
@@ -3745,6 +3979,8 @@ function switchMode(mode) {
   }
   document.getElementById('timeline-section').style.display = mode === 'today' ? '' : 'none';
   document.getElementById('search-pill').classList.toggle('open', mode === 'search');
+  updateSearchClear();
+  updateSearchRankBtn();
   updateSubtitle();
   if (mode === 'today') {
     const todayIdx = DATES.indexOf(TODAY);

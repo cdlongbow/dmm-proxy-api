@@ -162,4 +162,9 @@ function _M.handle_search()
     search.handle(id)
 end
 
+function _M.handle_searchrank()
+    local searchrank = require "api_searchrank"
+    searchrank.handle()
+end
+
 return _M
